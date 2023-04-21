@@ -80,11 +80,6 @@ def read_cookie():
 
 app = Flask(__name__)
 
-@app.route('/')
-
-def index():
-    return render_template('index.html', title='Hello world!')
-
 @app.route('/Song_V1')
 
 def Song_v1():
