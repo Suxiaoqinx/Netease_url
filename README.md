@@ -8,3 +8,6 @@ http://127.0.0.1:5000/Song_V1?ids=(填写歌曲链接或者ID)&level=(填写需�
 
 # 注意事项
 需要解析的话 请先在cookie.txt文件内填入黑胶会员账号的cookie 才可以解析！
+
+# 感谢
+[Ravizhan](https://github.com/ravizhan)
