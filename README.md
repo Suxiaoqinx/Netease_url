@@ -16,3 +16,6 @@ http://127.0.0.1:5000/Song_V1?ids=(填写歌曲链接或者ID)&level=(填写需�
 
 # 感谢
 [Ravizhan](https://github.com/ravizhan)
+
+# 反馈方法
+请在Github的lssues反馈 或者到我[博客](https://www.toubiec.cn)反馈
