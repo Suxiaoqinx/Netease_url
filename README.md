@@ -3,6 +3,9 @@
 pip install -r requirements.txt
 再运行main.py文件即可
 
+# 环境要求
+Python >= 3
+
 # 参数列表
 http://127.0.0.1:5000/Song_V1?ids=(填写歌曲链接或者ID)&level=(填写需要解析的音质)&type=(down json text)
 
