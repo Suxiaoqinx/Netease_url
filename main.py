@@ -1,4 +1,4 @@
-from flask import Flask, request, redirect, render_template
+from flask import Flask, request, redirect
 import json
 import os
 import urllib.parse
@@ -53,6 +53,12 @@ def music_level1(value):
         return "无损音质"
     elif value == 'hires':
         return "Hires音质"
+    elif value == 'sky':
+        return "沉浸环绕声"
+    elif value == 'jyeffect':
+        return "高清环绕声"
+    elif value == 'jymaster':
+        return "超清母带"
     else:
         return "未知音质"
 
