@@ -22,6 +22,9 @@ standard(标准音质), exhigh(极高音质), lossless(无损音质), hires(Hi-R
 
 # 注意事项
 请先在cookie.txt文件内填入黑胶会员账号的cookie 才可以解析！
+Cookie格式为↓
+MUSIC_U=你获取到的MUSIC_U值;appver=8.9.70; 完整填入cookie.txt即可！
+具体值在cookie.txt里面就有 替换一下就行了
 
 # 感谢
 [Ravizhan](https://github.com/ravizhan)
