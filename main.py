@@ -1,4 +1,4 @@
-from flask import Flask, request, redirect
+from flask import Flask, request, redirect ,jsonify
 import json
 import os
 import urllib.parse
@@ -34,7 +34,7 @@ def ids(ids):
     return ids
 
 #转换文件大小
-def hum_convert(value):
+def size(value):
      units = ["B", "KB", "MB", "GB", "TB", "PB"]
      size = 1024.0
      for i in range(len(units)):
@@ -86,12 +86,24 @@ def read_cookie():
 
 app = Flask(__name__)
 
-@app.route('/Song_V1')
+@app.route('/Song_V1',methods=['GET','POST'])
 
 def Song_v1():
-    song_ids = request.args.get('ids', default='2034742057')
-    level = request.args.get('level', default='hires')
-    type = request.args.get('type', default='text')
+    if request.method == 'GET':
+       song_ids = request.args.get('ids')
+       level = request.args.get('level')
+       type = request.args.get('type')
+    else:
+       song_ids = request.form.get('ids')
+       level = request.form.get('level')
+       type = request.form.get('type')
+    
+    if song_ids is None:
+        return jsonify({'error': 'ids参数为空'}), 400
+    if level is None:
+        return jsonify({'error': 'level参数为空'}), 400
+    if type is None:
+        return jsonify({'error': 'type参数为空'}), 400
 
     # 网易云cookie
     cookies = parse_cookie(read_cookie())
@@ -130,6 +142,7 @@ def Song_v1():
     data = {'c': json.dumps([{"id":jseg['data'][0]['id'],"v":0}])}
     resp = requests.post(url=song_names, data=data)
     jse = json.loads(resp.text)
+
     if jseg['data'][0]['url'] is not None:
         if jse['songs']:
            song_url = jseg['data'][0]['url']
@@ -138,25 +151,28 @@ def Song_v1():
            song_alname = jse['songs'][0]['al']['name']
            song_arname = jse['songs'][0]['ar'][0]['name']
     else:
-        return '信息获取失败！请检查解析的id是否存在歌曲'
+       data = jsonify({"status": 400,'msg': '信息获取不完整！'}), 400
     if type == 'text':
-       return '歌曲名称：' + song_name + '<br>歌曲图片：' + song_picUrl  + '<br>歌手：' + song_arname + '<br>歌曲专辑：' + song_alname + '<br>歌曲音质：' + music_level1(jseg['data'][0]['level']) + '<br>歌曲大小：' + hum_convert(jseg['data'][0]['size']) + '<br>音乐地址：' + song_url
+       data = '歌曲名称：' + song_name + '<br>歌曲图片：' + song_picUrl  + '<br>歌手：' + song_arname + '<br>歌曲专辑：' + song_alname + '<br>歌曲音质：' + music_level1(jseg['data'][0]['level']) + '<br>歌曲大小：' + size(jseg['data'][0]['size']) + '<br>音乐地址：' + song_url
     elif  type == 'down':
-       return redirect(song_url)
+       data = redirect(song_url)
     elif  type == 'json':
-     data = {
-       "status": 200,
-       "name": song_name,
-       "pic": song_picUrl,
-       "ar_name": song_arname,
-       "al_name": song_alname,
-       "level": jseg['data'][0]['level'],
-       "size": hum_convert(jseg['data'][0]['size']),
-       "url": song_url
-    }
+       data = jsonify({
+           "status": 200,
+           "name": song_name,
+           "pic": song_picUrl,
+           "ar_name": song_arname,
+           "al_name": song_alname,
+           "level":music_level1(jseg['data'][0]['level']),
+           "size": size(jseg['data'][0]['size']),
+           "url": song_url
+        })
     else:
-        return '解析失败，请检查参数是否正确'
-    return json.dumps(data, indent=4, ensure_ascii=False)
+        data = jsonify({"status": 400,'msg': '解析失败！请检查参数是否完整！'}), 400
+    return data
 
 if __name__ == '__main__':
-    app.run(debug=False,port=5000) # 默认调试模式为False关闭  端口默认为5000
+    app.config['JSON_SORT_KEYS'] = False
+    app.config['JSON_AS_ASCII']=False
+    #默认调试模式为False关闭  端口默认为5000
+    app.run(debug=False,port=5000)
