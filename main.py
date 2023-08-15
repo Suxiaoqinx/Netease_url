@@ -149,7 +149,12 @@ def Song_v1():
            song_name = jse['songs'][0]['name']
            song_picUrl = jse['songs'][0]['al']['picUrl']
            song_alname = jse['songs'][0]['al']['name']
-           song_arname = jse['songs'][0]['ar'][0]['name']
+           artist_names = []
+           for song in jse['songs']:
+               ar_list = song['ar']
+               if len(ar_list) > 0:
+                   artist_names.append('/'.join(ar['name'] for ar in ar_list))
+               song_arname = ', '.join(artist_names)
     else:
        data = jsonify({"status": 400,'msg': '信息获取不完整！'}), 400
     if type == 'text':
