@@ -137,12 +137,14 @@ def Song_v1():
     params = HexDigest(enc)
     # 发送POST请求
     response = post(url, params, cookies)
+    if "参数错误" in response:
+       return jsonify({"status": 400,'msg': '参数错误！'}), 400
+        
     jseg = json.loads(response)
     song_names = "https://music.163.com/api/v3/song/detail"
     data = {'c': json.dumps([{"id":jseg['data'][0]['id'],"v":0}])}
     resp = requests.post(url=song_names, data=data)
     jse = json.loads(resp.text)
-
     if jseg['data'][0]['url'] is not None:
         if jse['songs']:
            song_url = jseg['data'][0]['url']
