@@ -125,6 +125,9 @@ def Song_v1():
         'header': json.dumps(config),
     }
 
+    if level == 'sky':
+        payload['immerseType'] = 'c51'
+    
     url2 = urllib.parse.urlparse(url).path.replace("/eapi/", "/api/")
     digest = HashHexDigest(f"nobody{url2}use{json.dumps(payload)}md5forencrypt")
     params = f"{url2}-36cd479b6b5-{json.dumps(payload)}-36cd479b6b5-{digest}"
