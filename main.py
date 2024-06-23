@@ -28,6 +28,9 @@ def parse_cookie(text: str):
 
 # 输入id选项
 def ids(ids):
+    if '163cn.tv' in ids:
+        response = requests.get(ids, allow_redirects=False)
+        ids = response.headers.get('Location')
     if 'music.163.com' in ids:
         index = ids.find('id=') + 3
         ids = ids[index:].split('&')[0]
