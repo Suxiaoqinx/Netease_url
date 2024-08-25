@@ -14,7 +14,7 @@ Python >= 3
 
 ## 参数列表
 
-请求链接选择http://ip:port/Song_V1 
+请求链接选择 http://ip:port/Song_V1 
 
 请求方式 GET & POST
 
