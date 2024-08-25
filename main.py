@@ -1,4 +1,4 @@
-from flask import Flask, request, redirect ,jsonify
+from flask import Flask, request, redirect ,jsonify ,Response
 import json
 import os
 import urllib.parse
@@ -167,10 +167,17 @@ def Song_v1():
        return jsonify({"status": 400,'msg': '参数错误！'}), 400
         
     jseg = json.loads(response)
+    #歌曲信息接口
     song_names = "https://interface3.music.163.com/api/v3/song/detail"
-    data = {'c': json.dumps([{"id":jseg['data'][0]['id'],"v":0}])}
-    resp = requests.post(url=song_names, data=data)
+    song_data = {'c': json.dumps([{"id":jseg['data'][0]['id'],"v":0}])}
+    resp = requests.post(url=song_names, data=song_data)
     jse = json.loads(resp.text)
+    #歌词接口
+    lyric_names = "https://interface3.music.163.com/api/song/lyric"
+    lyric_data = {'id' : jseg['data'][0]['id'],'cp' : 'false','tv' : '0','lv' : '0','rv' : '0','kv' : '0','yv' : '0','ytv' : '0','yrv' : '0'}
+    lyricresp = requests.post(url=lyric_names, data=lyric_data, cookies=cookies)
+    lyricjse = json.loads(lyricresp.text)
+
     if jseg['data'][0]['url'] is not None:
         if jse['songs']:
            song_url = jseg['data'][0]['url']
@@ -190,7 +197,7 @@ def Song_v1():
     elif  type == 'down':
        data = redirect(song_url)
     elif  type == 'json':
-       data = jsonify({
+       data = {
            "status": 200,
            "name": song_name,
            "pic": song_picUrl,
@@ -198,13 +205,17 @@ def Song_v1():
            "al_name": song_alname,
            "level":music_level1(jseg['data'][0]['level']),
            "size": size(jseg['data'][0]['size']),
-           "url": song_url
-        })
+           "url": song_url,
+           "lyric": lyricjse['lrc']['lyric'],
+           "tlyric": lyricjse['tlyric']['lyric']
+        }
+       json_data = json.dumps(data)
+       data = Response(json_data, content_type='application/json')
     else:
         data = jsonify({"status": 400,'msg': '解析失败！请检查参数是否完整！'}), 400
     return data
 
 if __name__ == '__main__':
-    app.config['JSON_SORT_KEYS'] = True
-    app.config['JSON_AS_ASCII'] = True
+    app.config['JSON_SORT_KEYS'] = False
+    app.config['JSON_AS_ASCII'] = False
     app.run(host='0.0.0.0', port=5000, debug=False)
