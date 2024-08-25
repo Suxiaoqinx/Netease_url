@@ -7,7 +7,6 @@ from random import randrange
 import requests
 from cryptography.hazmat.primitives import padding
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-
 def HexDigest(data):
     # Digests a `bytearray` to a hex string
     return "".join([hex(d)[2:].zfill(2) for d in data])
@@ -89,24 +88,44 @@ def read_cookie():
 
 app = Flask(__name__)
 
+@app.route('/')
+
+def hello_world():
+    return '你好，世界！'
+
 @app.route('/Song_V1',methods=['GET','POST'])
 
 def Song_v1():
     if request.method == 'GET':
+    # 从查询字符串中获取所有参数的值
        song_ids = request.args.get('ids')
+       url = request.args.get('url')  
        level = request.args.get('level')
        type = request.args.get('type')
     else:
        song_ids = request.form.get('ids')
+       url = request.form.get('url')
        level = request.form.get('level')
        type = request.form.get('type')
     
-    if song_ids is None:
-        return jsonify({'error': 'ids参数为空'}), 400
+    # 检查至少提供一个 'ids' 或 'url' 参数
+    if not song_ids and url is None:
+        return jsonify({'error': '必须提供 ids 或 url 参数'}), 400
     if level is None:
         return jsonify({'error': 'level参数为空'}), 400
     if type is None:
         return jsonify({'error': 'type参数为空'}), 400
+
+    # Check if either song_ids or url is provided
+    if song_ids:
+        # Process song_ids
+        jsondata = song_ids
+    elif url:
+        # Process url
+        jsondata = url
+    else:
+        # Neither song_ids nor url provided
+        return jsonify({'error': '错误!'}), 400
 
     # 网易云cookie
     cookies = parse_cookie(read_cookie())
@@ -122,7 +141,7 @@ def Song_v1():
     }
 
     payload = {
-        'ids': [ids(song_ids)],
+        'ids': [ids(jsondata)],
         'level': level,
         'encodeType': 'flac',
         'header': json.dumps(config),
@@ -143,11 +162,12 @@ def Song_v1():
     params = HexDigest(enc)
     # 发送POST请求
     response = post(url, params, cookies)
+    #print(response)
     if "参数错误" in response:
        return jsonify({"status": 400,'msg': '参数错误！'}), 400
         
     jseg = json.loads(response)
-    song_names = "https://music.163.com/api/v3/song/detail"
+    song_names = "https://interface3.music.163.com/api/v3/song/detail"
     data = {'c': json.dumps([{"id":jseg['data'][0]['id'],"v":0}])}
     resp = requests.post(url=song_names, data=data)
     jse = json.loads(resp.text)
@@ -185,7 +205,6 @@ def Song_v1():
     return data
 
 if __name__ == '__main__':
-    app.config['JSON_SORT_KEYS'] = False
-    app.config['JSON_AS_ASCII']=False
-    #默认调试模式为False关闭  端口默认为5000
-    app.run(debug=False,port=5000)
+    app.config['JSON_SORT_KEYS'] = True
+    app.config['JSON_AS_ASCII'] = True
+    app.run(host='0.0.0.0', port=5000, debug=False)
