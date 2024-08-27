@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>音乐查询</title>
+    <link href="https://cdn.bootcdn.net/ajax/libs/twitter-bootstrap/5.3.3/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.bootcdn.net/ajax/libs/aplayer/1.10.1/APlayer.min.css">
+    <style>
+        body {
+            background-color: #f8f9fa;
+            color: #333;
+        }
+        .container {
+            max-width: 800px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        .btn-primary {
+            margin-top: 20px;
+            background-color: #007bff;
+            border-color: #007bff;
+        }
+        .btn-primary:hover {
+            background-color: #0056b3;
+            border-color: #004085;
+        }
+        #song-info {
+            margin-top: 20px;
+        }
+        #song-info img {
+            max-width: 100%;
+            border-radius: 8px;
+        }
+        .alert-info {
+            background-color: #d1ecf1;
+            color: #0c5460;
+            border-color: #bee5eb;
+        }
+    </style>
+</head>
+<body>
+    <div class="container mt-5">
+        <h1 class="text-center mb-4">音乐查询</h1>
+        
+        <!-- 查询表单 -->
+        <form id="query-form">
+            <div class="form-group">
+                <label for="song_ids" class="form-label">歌曲 ID 或 URL</label>
+                <input type="text" id="song_ids" class="form-control" placeholder="输入歌曲 ID 或 URL">
+            </div>
+            <div class="form-group">
+                <label for="level" class="form-label">音质选择</label>
+                <select id="level" class="form-control">
+                    <option value="standard">标准音质</option>
+                    <option value="exhigh">极高音质</option>
+                    <option value="lossless">无损音质</option>
+                    <option value="hires">Hires音质</option>
+                    <option value="sky">沉浸环绕声</option>
+                    <option value="jyeffect">高清环绕声</option>
+                    <option value="jymaster">超清母带</option>
+                </select>
+            </div>
+            <div class="form-group text-center">
+                <button type="submit" class="btn btn-primary">提交</button>
+            </div>
+        </form>
+
+        <!-- 结果展示区域 -->
+        <div id="song-info" class="alert alert-info d-none">
+            <div id="aplayer" class="mb-3"></div>
+            <p><strong>歌名：</strong><span id="song_name"></span></p>
+            <p><strong>歌曲图片：</strong><a id="song_picUrl" href="" target="_blank">点击查看</a></p>
+            <p><strong>歌手：</strong><span id="artist_names"></span></p>
+            <p><strong>专辑：</strong><span id="song_alname"></span></p>
+            <p><strong>音质：</strong><span id="song_level"></span></p>
+            <p><strong>大小：</strong><span id="song_size"></span></p>
+            <p><strong>歌词：</strong><br><span id="lyric"></span></p>
+            <p><strong>音乐链接：</strong><a id="song_url" href="" target="_blank">点击下载</a></p>
+        </div>
+    </div>
+
+    <script src="https://cdn.bootcdn.net/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+    <script src="https://cdn.bootcdn.net/ajax/libs/aplayer/1.10.1/APlayer.min.js"></script>
+    <script>
+        $(document).ready(function() {
+            const form = $('#query-form');
+
+            form.on('submit', function(event) {
+                event.preventDefault();
+                
+                const songIds = $('#song_ids').val();
+                const level = $('#level').val();
+
+                $.post('/fetch_data', { song_ids: songIds, level: level }, function(data) {
+                    if (data.status === 200) {
+                        $('#song_name').text(data.name);
+                        $('#song_picUrl').attr('href', data.pic).text('点击查看');
+                        $('#artist_names').text(data.ar_name);
+                        $('#song_alname').text(data.al_name);
+                        $('#song_level').text(data.level);
+                        $('#song_size').text(data.size);
+                        $('#lyric').html(data.lyric.replace(/\n/g, '<br>'));
+                        $('#song_url').attr('href', data.url).text('点击下载');
+                        $('#song-info').removeClass('d-none');
+
+                        new APlayer({
+                            container: document.getElementById('aplayer'),
+                            lrcType: 1,
+                            audio: [{
+                                name: data.name,
+                                artist: data.ar_name,
+                                url: data.url,
+                                cover: data.pic,
+                                lrc: data.lyric
+                            }]
+                        });
+                    } else {
+                        alert(data.msg);
+                    }
+                }, 'json');
+            });
+        });
+    </script>
+</body>
+</html>
