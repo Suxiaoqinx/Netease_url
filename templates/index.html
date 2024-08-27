@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>音乐查询</title>
+    <title>网易云无损解析</title>
     <link href="https://cdn.bootcdn.net/ajax/libs/twitter-bootstrap/5.3.3/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.bootcdn.net/ajax/libs/aplayer/1.10.1/APlayer.min.css">
     <style>
@@ -42,7 +42,7 @@
 </head>
 <body>
     <div class="container mt-5">
-        <h1 class="text-center mb-4">音乐查询</h1>
+        <h1 class="text-center mb-4">网易云无损解析</h1>
         
         <!-- 查询表单 -->
         <form id="query-form">
@@ -76,24 +76,115 @@
             <p><strong>专辑：</strong><span id="song_alname"></span></p>
             <p><strong>音质：</strong><span id="song_level"></span></p>
             <p><strong>大小：</strong><span id="song_size"></span></p>
-            <p><strong>歌词：</strong><br><span id="lyric"></span></p>
             <p><strong>音乐链接：</strong><a id="song_url" href="" target="_blank">点击下载</a></p>
+            <p><strong>歌词：</strong><br><span id="lyric"></span></p>
         </div>
     </div>
 
     <script src="https://cdn.bootcdn.net/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
     <script src="https://cdn.bootcdn.net/ajax/libs/aplayer/1.10.1/APlayer.min.js"></script>
+
     <script>
         $(document).ready(function() {
-            const form = $('#query-form');
 
-            form.on('submit', function(event) {
+            function lrctrim(lyrics) {
+                const lines = lyrics.split('\n');
+                const data = [];
+
+                lines.forEach((line, index) => {
+                    const matches = line.match(/\[(\d{2}):(\d{2}[\.:]?\d*)]/);
+                    if (matches) {
+                        const minutes = parseInt(matches[1], 10);
+                        const seconds = parseFloat(matches[2].replace('.', ':')) || 0;
+                        const timestamp = minutes * 60000 + seconds * 1000;
+
+                        let text = line.replace(/\[\d{2}:\d{2}[\.:]?\d*\]/g, '').trim();
+                        text = text.replace(/\s\s+/g, ' '); // Replace multiple spaces with a single space
+
+                        data.push([timestamp, index, text]);
+                    }
+                });
+
+                data.sort((a, b) => a[0] - b[0]);
+
+                return data;
+            }
+
+            function lrctran(lyric, tlyric) {
+                lyric = lrctrim(lyric);
+                tlyric = lrctrim(tlyric);
+
+                let len1 = lyric.length;
+                let len2 = tlyric.length;
+                let result = "";
+
+                for (let i = 0, j = 0; i < len1 && j < len2; i++) {
+                    while (lyric[i][0] > tlyric[j][0] && j + 1 < len2) {
+                        j++;
+                    }
+
+                    if (lyric[i][0] === tlyric[j][0]) {
+                        tlyric[j][2] = tlyric[j][2].replace('/', '');
+                        if (tlyric[j][2]) {
+                            lyric[i][2] += ` (翻译：${tlyric[j][2]})`;
+                        }
+                        j++;
+                    }
+                }
+
+                for (let i = 0; i < len1; i++) {
+                    let t = lyric[i][0];
+                    result += `[${String(Math.floor(t / 60000)).padStart(2, '0')}:${String(Math.floor((t % 60000) / 1000)).padStart(2, '0')}.${String(t % 1000).padStart(3, '0')}]${lyric[i][2]}\n`;
+                }
+
+                return result;
+            }
+
+            function extractLinks(text) {
+                var regex = /https?:\/\/\S+/g;
+                var matches = text.match(regex);
+                if (matches) {
+                    return matches[0];
+                } else {
+                    return '';
+                }
+            }
+    
+            function checkValidLink(link) {
+                if (link.indexOf("http") === -1 || 
+                    (link.indexOf("music.163.com") === -1 && link.indexOf("163cn.tv") === -1)) {
+                    return false;
+                }
+                return true;
+            }
+    
+            function extractAndCheckId(text) {
+                var link = extractLinks(text);
+                if (checkValidLink(link)) {
+                    return link;
+                } else {
+                    var idRegex = /\b\d+\b/g;
+                    var ids = text.match(idRegex);
+                    if (ids && ids.length > 0) {
+                        return ids[0];
+                    }
+                    return '';
+                }
+            }
+
+            $('#query-form').on('submit', function(event) {
                 event.preventDefault();
-                
+
                 const songIds = $('#song_ids').val();
                 const level = $('#level').val();
+                const validId = extractAndCheckId(songIds);
 
-                $.post('/fetch_data', { song_ids: songIds, level: level }, function(data) {
+                if (!validId) {
+                    alert('Invalid link or ID');
+                    return;
+                }
+
+                $.post('/fetch_data', { song_ids: validId, level: level }, function(data) {
                     if (data.status === 200) {
                         $('#song_name').text(data.name);
                         $('#song_picUrl').attr('href', data.pic).text('点击查看');
@@ -101,7 +192,12 @@
                         $('#song_alname').text(data.al_name);
                         $('#song_level').text(data.level);
                         $('#song_size').text(data.size);
-                        $('#lyric').html(data.lyric.replace(/\n/g, '<br>'));
+                        if (data.tlyric) {
+                            processedLyrics = lrctran(data.lyric, data.tlyric);
+                        } else {
+                            processedLyrics = data.lyric;
+                        }
+                        $('#lyric').html(processedLyrics.replace(/\n/g, '<br>'));
                         $('#song_url').attr('href', data.url).text('点击下载');
                         $('#song-info').removeClass('d-none');
 
@@ -113,7 +209,7 @@
                                 artist: data.ar_name,
                                 url: data.url,
                                 cover: data.pic,
-                                lrc: data.lyric
+                                lrc: processedLyrics
                             }]
                         });
                     } else {
