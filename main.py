@@ -23,15 +23,6 @@ def parse_cookie(text: str):
     cookie_ = {k.strip(): v.strip() for k, v in cookie_}
     return cookie_
 
-def ids(ids):
-    if '163cn.tv' in ids:
-        response = requests.get(ids, allow_redirects=False)
-        ids = response.headers.get('Location')
-    if 'music.163.com' in ids:
-        index = ids.find('id=') + 3
-        ids = ids[index:].split('&')[0]
-    return ids
-
 def read_cookie():
     script_dir = os.path.dirname(os.path.abspath(__file__))
     cookie_file = os.path.join(script_dir, 'cookie.txt')
