@@ -162,7 +162,6 @@ def Song_v1():
     urlv1 = url_v1(ids(jsondata),level,cookies)
     namev1 = name_v1(urlv1['data'][0]['id'])
     lyricv1 = lyric_v1(urlv1['data'][0]['id'],cookies)
-
     if urlv1['data'][0]['url'] is not None:
         if namev1['songs']:
            song_url = urlv1['data'][0]['url']
@@ -190,12 +189,11 @@ def Song_v1():
            "al_name": song_alname,
            "level":music_level1(urlv1['data'][0]['level']),
            "size": size(urlv1['data'][0]['size']),
-           "url": song_url,
+           "url": song_url.replace("http://", "https://", 1),
            "lyric": lyricv1['lrc']['lyric'],
-           "tlyric": lyricv1['tlyric']['lyric']
+           "tlyric": lyricv1.get('tlyric', {}).get('lyric', None)
         }
-       json_data = json.dumps(data)
-       data = Response(json_data, content_type='application/json')
+       data = Response(json.dumps(data), content_type='application/json')
     else:
         data = jsonify({"status": 400,'msg': '解析失败！请检查参数是否完整！'}), 400
     return data
