@@ -180,7 +180,7 @@ def fetch_data():
             "al_name": song_alname,
             "level": music_level1(urlv1['data'][0]['level']),
             "size": size(urlv1['data'][0]['size']),
-            "url": song_url,
+            "url": song_url.replace("http://", "https://", 1),
             "lyric": lyricv1.get('lrc', {}).get('lyric', '无歌词'),
             "tlyric": lyricv1.get('tlyric', {}).get('lyric', '无翻译歌词')
         }
