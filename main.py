@@ -190,8 +190,8 @@ def Song_v1():
            "level":music_level1(urlv1['data'][0]['level']),
            "size": size(urlv1['data'][0]['size']),
            "url": song_url.replace("http://", "https://", 1),
-           "lyric": lyricv1['lrc']['lyric'],
-           "tlyric": lyricv1.get('tlyric', {}).get('lyric', None)
+           "lyric": lyricv1.get('lrc', {}).get('lyric', '无歌词'),
+           "tlyric": lyricv1.get('tlyric', {}).get('lyric', '无翻译歌词')
         }
        data = Response(json.dumps(data), content_type='application/json')
     else:
