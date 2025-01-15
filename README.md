@@ -9,13 +9,15 @@ pip install -r requirements.txt
 # 环境要求
 Python >= 3
 
-# 请求示例
+## GUI模式参数
+python main.py 
+|  参数列表  | 参数说明 |
+|  ----  | ---- |
+| --mode | api 或 gui|
+| --level | 音质参数(请看下方音质说明) |
+| --url |  解析获取到的网易云音乐地址 |
 
-如图箭头显示
-
-![url链接](https://raw.githubusercontent.com/Suxiaoqinx/Netease_url/main/620598f6-a651-4698-bfbc-7a5a904a8609.png)
-
-## 参数列表
+## API模式参数列表
 
 请求链接选择 http://ip:port/Song_V1 
 
