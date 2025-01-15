@@ -232,7 +232,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="启动 API 或 GUI")
     parser.add_argument('--mode', choices=['api', 'gui'], help="选择启动模式：api 或 gui")
     parser.add_argument('--url', help="提供 URL 参数供 GUI 模式使用")
-    parser.add_argument('--level', default='jymaster', choices=['standard', 'exhigh', 'lossless', 'hires', 'sky', 'jyeffect', 'jymaster'], help="选择音质等级，默认是 lossless")
+    parser.add_argument('--level', default='lossless', choices=['standard', 'exhigh', 'lossless', 'hires', 'sky', 'jyeffect', 'jymaster'], help="选择音质等级，默认是 lossless")
     args = parser.parse_args()
 
     if args.mode == 'api':
