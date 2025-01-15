@@ -1,4 +1,5 @@
-from flask import Flask, request, jsonify ,redirect ,Response
+import argparse
+from flask import Flask, request, render_template, redirect, jsonify
 import json
 import os
 import urllib.parse
@@ -45,7 +46,6 @@ def post(url, params, cookie):
     response = requests.post(url, headers=headers, cookies=cookies, data={"params": params})
     return response.text
 
-# 输入id选项
 def ids(ids):
     if '163cn.tv' in ids:
         response = requests.get(ids, allow_redirects=False)
@@ -55,34 +55,26 @@ def ids(ids):
         ids = ids[index:].split('&')[0]
     return ids
 
-#转换文件大小
 def size(value):
-     units = ["B", "KB", "MB", "GB", "TB", "PB"]
-     size = 1024.0
-     for i in range(len(units)):
-         if (value / size) < 1:
-             return "%.2f%s" % (value, units[i])
-         value = value / size
-     return value
+    units = ["B", "KB", "MB", "GB", "TB", "PB"]
+    size = 1024.0
+    for i in range(len(units)):
+        if (value / size) < 1:
+            return "%.2f%s" % (value, units[i])
+        value = value / size
+    return value
 
-#转换音质
 def music_level1(value):
-    if value == 'standard':
-        return "标准音质"
-    elif value == 'exhigh':
-        return "极高音质"
-    elif value == 'lossless':
-        return "无损音质"
-    elif value == 'hires':
-        return "Hires音质"
-    elif value == 'sky':
-        return "沉浸环绕声"
-    elif value == 'jyeffect':
-        return "高清环绕声"
-    elif value == 'jymaster':
-        return "超清母带"
-    else:
-        return "未知音质"
+    levels = {
+        'standard': "标准音质",
+        'exhigh': "极高音质",
+        'lossless': "无损音质",
+        'hires': "Hires音质",
+        'sky': "沉浸环绕声",
+        'jyeffect': "高清环绕声",
+        'jymaster': "超清母带"
+    }
+    return levels.get(value, "未知音质")
 
 def url_v1(id, level, cookies):
     url = "https://interface3.music.163.com/eapi/song/enhance/player/url/v1"
@@ -118,24 +110,23 @@ def url_v1(id, level, cookies):
     return json.loads(response)
 
 def name_v1(id):
-    #歌曲信息接口
     urls = "https://interface3.music.163.com/api/v3/song/detail"
     data = {'c': json.dumps([{"id":id,"v":0}])}
     response = requests.post(url=urls, data=data)
     return response.json()
 
-def lyric_v1(id,cookies):
-    #歌词接口
+def lyric_v1(id, cookies):
     url = "https://interface3.music.163.com/api/song/lyric"
-    data = {'id' : id,'cp' : 'false','tv' : '0','lv' : '0','rv' : '0','kv' : '0','yv' : '0','ytv' : '0','yrv' : '0'}
+    data = {'id': id, 'cp': 'false', 'tv': '0', 'lv': '0', 'rv': '0', 'kv': '0', 'yv': '0', 'ytv': '0', 'yrv': '0'}
     response = requests.post(url=url, data=data, cookies=cookies)
     return response.json()
 
+# Flask 应用部分
 app = Flask(__name__)
 
-@app.route('/')
-def hello_world():
-    return '你好，世界！'
+@app.route('/', methods=['GET', 'POST'])
+def index():
+    return render_template('index.html')
 
 @app.route('/Song_V1', methods=['GET', 'POST'])
 def Song_v1():
@@ -190,13 +181,61 @@ def Song_v1():
            "level":music_level1(urlv1['data'][0]['level']),
            "size": size(urlv1['data'][0]['size']),
            "url": song_url.replace("http://", "https://", 1),
-           "lyric": lyricv1.get('lrc', {}).get('lyric', '无歌词'),
-           "tlyric": lyricv1.get('tlyric', {}).get('lyric', '无翻译歌词')
+           "lyric": lyricv1['lrc']['lyric'],
+           "tlyric": lyricv1.get('tlyric', {}).get('lyric', None)
         }
-       data = Response(json.dumps(data), content_type='application/json')
+       data = jsonify(data)
     else:
         data = jsonify({"status": 400,'msg': '解析失败！请检查参数是否完整！'}), 400
     return data
 
-if __name__ == '__main__':
+def start_gui(url=None, level='lossless'):
+    if url:
+        print(f"正在处理 URL: {url}，音质：{level}")
+        song_ids = ids(url)
+        cookies = parse_cookie(read_cookie())
+        urlv1 = url_v1(song_ids, level, cookies)
+        namev1 = name_v1(urlv1['data'][0]['id'])
+        lyricv1 = lyric_v1(urlv1['data'][0]['id'], cookies)
+
+        song_name = namev1['songs'][0]['name']
+        song_pic = namev1['songs'][0]['al']['picUrl']
+        artist_names = ', '.join(artist['name'] for artist in namev1['songs'][0]['ar'])
+        album_name = namev1['songs'][0]['al']['name']
+        music_quality = music_level1(urlv1['data'][0]['level'])
+        file_size = size(urlv1['data'][0]['size'])
+        music_url = urlv1['data'][0]['url']
+        lyrics = lyricv1['lrc']['lyric']
+        translated_lyrics = lyricv1.get('tlyric', {}).get('lyric', None)
+
+        output_text = f"""
+        歌曲名称: {song_name}
+        歌曲图片: {song_pic}
+        歌手: {artist_names}
+        专辑名称: {album_name}
+        音质: {music_quality}
+        大小: {file_size}
+        音乐链接: {music_url}
+        歌词: {lyrics}
+        翻译歌词: {translated_lyrics if translated_lyrics else '没有翻译歌词'}
+        """
+
+        print(output_text)
+    else:
+        print("没有提供 URL 参数")
+
+def start_api():
     app.run(host='0.0.0.0', port=5000, debug=False)
+
+# 启动模式解析
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description="启动 API 或 GUI")
+    parser.add_argument('--mode', choices=['api', 'gui'], help="选择启动模式：api 或 gui")
+    parser.add_argument('--url', help="提供 URL 参数供 GUI 模式使用")
+    parser.add_argument('--level', default='jymaster', choices=['standard', 'exhigh', 'lossless', 'hires', 'sky', 'jyeffect', 'jymaster'], help="选择音质等级，默认是 lossless")
+    args = parser.parse_args()
+
+    if args.mode == 'api':
+        start_api()
+    elif args.mode == 'gui':
+        start_gui(args.url, args.level)
