@@ -17,6 +17,8 @@ python main.py
 | --level | 音质参数(请看下方音质说明) |
 | --url |  解析获取到的网易云音乐地址 |
 
+完整请求 python main.py --mode gui --url 音乐地址 --level 音质
+
 ## API模式参数列表
 
 请求链接选择 http://ip:port/Song_V1 
