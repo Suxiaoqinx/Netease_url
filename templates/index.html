@@ -184,7 +184,7 @@
                     return;
                 }
 
-                $.post('/fetch_data', { song_ids: validId, level: level }, function(data) {
+                $.post('/Song_V1', { url: validId, level: level, type:'json' }, function(data) {
                     if (data.status === 200) {
                         $('#song_name').text(data.name);
                         $('#song_picUrl').attr('href', data.pic).text('点击查看');
