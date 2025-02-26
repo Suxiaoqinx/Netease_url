@@ -1,0 +1,8 @@
+{
+    "level": "exhigh",
+    "savePath": "./success",
+    "packPath": "./pack",
+    "songs": [
+        "https://music.163.com/song?id=2647373433"
+    ]
+  }
