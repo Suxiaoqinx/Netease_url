@@ -31,6 +31,27 @@ python main.py
 | level | 音质参数(请看下方音质说明) |
 | type | 解析类型 json down text *任选其一 |
 
+# docker-compose一键部署
+
+## 修改参数
+
+部署前，可以根据需要修改`.env`文件中的环境变量
+
+默认端口为`5000`，如果需要修改，请在`docker-compose.yml`文件中修改`ports`变量
+
+例如，如果需要将端口修改为`8080`，请将以下代码：
+
+```yaml
+ports:
+  - "8080:5000"
+```
+
+## docker-compose一键启动
+
+```bash
+docker-compose up -d
+```
+
 # 音质说明
 standard(标准音质), exhigh(极高音质), lossless(无损音质), hires(Hi-Res音质), jyeffect(高清环绕声), sky(沉浸环绕声), jymaster(超清母带)
 
