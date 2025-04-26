@@ -1,0 +1,10 @@
+services:
+  netease-url:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    ports:
+      - "5000:5000"
+    restart: unless-stopped
