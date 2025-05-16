@@ -1,74 +1,138 @@
-# ！声明 ！
-本项目为开源软件，遵循MIT许可证。任何个人或组织均可自由使用、修改和分发本项目的源代码。然而，我们明确声明，本项目及其任何衍生作品不得用于任何商业或付费项目。任何违反此声明的行为都将被视为对本项目许可证的侵犯。我们鼓励大家在遵守开源精神和许可证的前提下，积极贡献和分享代码。
+# 网易云无损音乐解析
 
-# 网易云无损解析使用方法
-先安装 文件所需要的依赖模块 
-pip install -r requirements.txt
-再运行main.py文件即可
+> **声明**  
+> 本项目为开源软件，遵循 MIT 许可证。任何个人或组织均可自由使用、修改和分发本项目的源代码。但本项目及其任何衍生作品**禁止用于任何商业或付费项目**。如有违反，将视为对本项目许可证的侵犯。欢迎大家在遵守开源精神和许可证的前提下积极贡献和分享代码。
 
-# 环境要求
-Python >= 3
+---
 
-## GUI模式参数
-python main.py 
-|  参数列表  | 参数说明 |
-|  ----  | ---- |
-| --mode | api 或 gui|
-| --level | 音质参数(请看下方音质说明) |
-| --url |  解析获取到的网易云音乐地址 |
+## 功能简介
 
-完整请求 python main.py --mode gui --url 音乐地址 --level 音质
+本项目可解析网易云音乐无损音质下载链接，支持多种音质选择，支持 API 与命令行（GUI）两种模式。
 
-## API模式参数列表
+---
 
-请求链接选择 http://ip:port/Song_V1 
+## 快速开始
 
-请求方式 GET & POST
-
-|  参数列表  | 参数说明 |
-|  ----  | ---- |
-| url & ids | 解析获取到的网易云音乐地址  *任选其一|
-| level | 音质参数(请看下方音质说明) |
-| type | 解析类型 json down text *任选其一 |
-
-# docker-compose一键部署
-
-## 修改参数
-
-部署前，可以根据需要修改`.env`文件中的环境变量
-
-默认端口为`5000`，如果需要修改，请在`docker-compose.yml`文件中修改`ports`变量
-
-例如，如果需要将端口修改为`8080`，请将以下代码：
-
-```yaml
-ports:
-  - "8080:5000"
-```
-
-## docker-compose一键启动
+### 1. 安装依赖
 
 ```bash
-docker-compose up -d
+pip install -r requirements.txt
 ```
 
-# 音质说明
-standard(标准音质), exhigh(极高音质), lossless(无损音质), hires(Hi-Res音质), jyeffect(高清环绕声), sky(沉浸环绕声), jymaster(超清母带)
+### 2. 配置 Cookie
 
-黑胶VIP音质选择 standard, exhigh, lossless, hires, jyeffect <br> <br>
-黑胶SVIP音质选择 sky, jymaster
+请在 `cookie.txt` 文件中填入黑胶会员账号的 Cookie，格式如下：
 
-# 演示站点
+```
+MUSIC_U=你的MUSIC_U值;os=pc;appver=8.9.70;
+```
+
+> 具体值请参考 `cookie.txt` 示例，替换为你自己的即可。
+
+### 3. 运行
+
+#### GUI 模式
+
+```bash
+python main.py --mode gui --url <网易云音乐地址> --level <音质参数>
+```
+
+#### API 模式
+
+```bash
+python main.py --mode api
+```
+
+- 访问接口：http://ip:port/类型解析
+- 支持 GET 和 POST 请求
+
+---
+
+## 参数说明
+
+### GUI 模式参数
+
+| 参数         | 说明                         |
+| ------------ | ---------------------------- |
+| --mode       | 启动模式：api 或 gui         |
+| --url        | 需要解析的网易云音乐地址     |
+| --level      | 音质参数（见下方音质说明）   |
+
+### API 模式参数
+
+| 参数         | 说明                                         |
+| ------------ | -------------------------------------------- |
+| url / ids    | 网易云音乐地址或歌曲ID（二选一）             |
+| level        | 音质参数（见下方音质说明）                   |
+| type         | 解析类型：json / down / text（三选一）       |
+
+| 类型参数         | 说明                                         |
+| ------------ | -------------------------------------------- |
+| Song_v1    | 单曲解析             |
+| search        | 搜索解析                   |
+| playlist         | 歌单解析       |
+| album         | 专辑解析       |
+
+---
+
+## 音质参数说明（仅限单曲解析）
+
+- `standard`：标准音质
+- `exhigh`：极高音质
+- `lossless`：无损音质
+- `hires`：Hi-Res音质
+- `jyeffect`：高清环绕声
+- `sky`：沉浸环绕声
+- `jymaster`：超清母带
+
+> 黑胶VIP音质：standard, exhigh, lossless, hires, jyeffect  
+> 黑胶SVIP音质：sky, jymaster
+
+---
+
+## Docker 一键部署
+
+1. **修改参数**
+
+   - 如需修改端口，请编辑 `.env` 或 `docker-compose.yml` 文件中的 `ports` 配置，例如：
+
+     ```yaml
+     ports:
+       - "8080:5000"
+     ```
+
+2. **启动服务**
+
+   ```bash
+   docker-compose up -d
+   ```
+
+---
+
+## 在线演示
+
 [在线解析](https://api.toubiec.cn/wyapi.html)
 
-# 注意事项
-请先在cookie.txt文件内填入黑胶会员账号的cookie 才可以解析！
-Cookie格式为↓
-MUSIC_U=你获取到的MUSIC_U值;os=pc;appver=8.9.70; 完整填入cookie.txt即可！
-具体值在cookie.txt里面就有 替换一下就行了
+---
 
-# 感谢
-[Ravizhan](https://github.com/ravizhan)
+## 注意事项
 
-# 反馈方法
-请在Github的lssues反馈 或者到我[博客](https://www.toubiec.cn)反馈
+- 必须使用黑胶会员账号的 Cookie 才能解析高音质资源。
+- Cookie 格式请严格按照 `cookie.txt` 示例填写。
+
+---
+
+## 致谢
+
+- [Ravizhan](https://github.com/ravizhan)
+
+---
+
+## 反馈与交流
+
+- 在 Github [Issues](https://github.com/Suxiaoqinx/Netease_url/issues) 提交反馈
+- 或访问 [我的博客](https://www.toubiec.cn)
+
+---
+
+欢迎 Star、Fork 和 PR！
