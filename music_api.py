@@ -206,7 +206,7 @@ def get_pic_url(pic_id, size=300):
     获取网易云加密歌曲/专辑封面直链
     :param pic_id: 封面ID（数字或字符串）
     :param size: 图片尺寸，默认300
-    :return: {'url': url}
+    :return: url
     """
     enc_id = netease_encryptId(str(pic_id))
     url = f'https://p3.music.126.net/{enc_id}/{pic_id}.jpg?param={size}y{size}'
