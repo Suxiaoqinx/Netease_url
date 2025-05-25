@@ -3,3 +3,4 @@ Flask==3.0.3
 Jinja2==3.1.4
 requests==2.28.2
 urllib3==1.26.15
+qrcode==8.2

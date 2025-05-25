@@ -31,6 +31,21 @@ def post(url, params, cookie):
     response = requests.post(url, headers=headers, cookies=cookies, data={"params": params})
     return response.text
 
+def posts(url, params, cookie):
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Safari/537.36 Chrome/91.0.4472.164 NeteaseMusicDesktop/2.10.2.200154',
+        'Referer': '',
+    }
+    cookies = {
+        "os": "pc",
+        "appver": "",
+        "osver": "",
+        "deviceId": "pyncm!"
+    }
+    cookies.update(cookie)
+    response = requests.post(url, headers=headers, cookies=cookies, data={"params": params})
+    return response  # 修改为返回完整的 response 对象
+
 def url_v1(id, level, cookies):
     url = "https://interface3.music.163.com/eapi/song/enhance/player/url/v1"
     AES_KEY = b"e82ckenh8dichen8"
@@ -211,3 +226,135 @@ def get_pic_url(pic_id, size=300):
     enc_id = netease_encryptId(str(pic_id))
     url = f'https://p3.music.126.net/{enc_id}/{pic_id}.jpg?param={size}y{size}'
     return url
+
+def generate_qr_key():
+    """
+    生成二维码的key
+    :return: key和unikey
+    """
+    url = 'https://interface3.music.163.com/eapi/login/qrcode/unikey'
+    AES_KEY = b"e82ckenh8dichen8"
+    config = {
+        "os": "pc",
+        "appver": "",
+        "osver": "",
+        "deviceId": "pyncm!",
+        "requestId": str(randrange(20000000, 30000000))
+    }
+
+    payload = {
+        'type': 1,
+        'header': json.dumps(config)
+    }
+    
+    url2 = urllib.parse.urlparse(url).path.replace("/eapi/", "/api/")
+    digest = HashHexDigest(f"nobody{url2}use{json.dumps(payload)}md5forencrypt")
+    params = f"{url2}-36cd479b6b5-{json.dumps(payload)}-36cd479b6b5-{digest}"
+    padder = padding.PKCS7(algorithms.AES(AES_KEY).block_size).padder()
+    padded_data = padder.update(params.encode()) + padder.finalize()
+    cipher = Cipher(algorithms.AES(AES_KEY), modes.ECB())
+    encryptor = cipher.encryptor()
+    enc = encryptor.update(padded_data) + encryptor.finalize()
+    params = HexDigest(enc)
+    
+    response = posts(url, params, {})
+    result = json.loads(response.text)  # 保持不变，因为 post 函数已修复
+    if result['code'] == 200:
+        return result['unikey']
+    return None
+
+def create_qr_login():
+    """
+    创建登录二维码并在控制台显示
+    :return: unikey用于检查登录状态
+    """
+    import qrcode
+    from qrcode.main import QRCode
+    import os
+
+    unikey = generate_qr_key()
+    if not unikey:
+        print("生成二维码key失败")
+        return None
+
+    # 创建二维码
+    qr = QRCode()
+    qr.add_data(f'https://music.163.com/login?codekey={unikey}')
+    qr.make(fit=True)
+    
+    # 在控制台显示二维码
+    qr.print_ascii(tty=True)
+    print("\n请使用网易云音乐APP扫描上方二维码登录")
+    return unikey
+
+def check_qr_login(unikey):
+    """
+    检查二维码登录状态
+    :param unikey: 二维码key
+    :return: (登录状态, cookie字典)
+    """
+    url = 'https://interface3.music.163.com/eapi/login/qrcode/client/login'
+    AES_KEY = b"e82ckenh8dichen8"
+    config = {
+        "os": "pc",
+        "appver": "",
+        "osver": "",
+        "deviceId": "pyncm!",
+        "requestId": str(randrange(20000000, 30000000))
+    }
+
+    payload = {
+        'key': unikey,
+        'type': 1,
+        'header': json.dumps(config)
+    }
+    
+    url2 = urllib.parse.urlparse(url).path.replace("/eapi/", "/api/")
+    digest = HashHexDigest(f"nobody{url2}use{json.dumps(payload)}md5forencrypt")
+    params = f"{url2}-36cd479b6b5-{json.dumps(payload)}-36cd479b6b5-{digest}"
+    padder = padding.PKCS7(algorithms.AES(AES_KEY).block_size).padder()
+    padded_data = padder.update(params.encode()) + padder.finalize()
+    cipher = Cipher(algorithms.AES(AES_KEY), modes.ECB())
+    encryptor = cipher.encryptor()
+    enc = encryptor.update(padded_data) + encryptor.finalize()
+    params = HexDigest(enc)
+    
+    response = posts(url, params, {})
+    result = json.loads(response.text)
+    
+    cookie_dict = {}
+    #print("服务器返回结果：", result)
+    #print("Set-Cookie头:", response.headers.get('Set-Cookie', ''))
+    
+    if result['code'] == 803:
+        # 直接从响应的headers获取Set-Cookie
+        all_cookies = response.headers.get('Set-Cookie', '').split(', ')
+        for cookie_str in all_cookies:
+            if 'MUSIC_U=' in cookie_str:
+                cookie_dict['MUSIC_U'] = cookie_str.split('MUSIC_U=')[1].split(';')[0]
+            
+    return result['code'], cookie_dict
+
+def qr_login():
+    """
+    完整的二维码登录流程
+    :return: 成功返回cookie字典，失败返回None
+    """
+    unikey = create_qr_login()
+    if not unikey:
+        return None
+        
+    import time
+    while True:
+        code, cookies = check_qr_login(unikey)
+        if code == 803:
+            print("\n登录成功！")
+            return 'MUSIC_U=' + cookies['MUSIC_U'] + ';os=pc;appver=8.9.70;'  # 修复字符串拼接
+        elif code == 801:
+            print("\r等待扫码...", end='')
+        elif code == 802:
+            print("\r扫码成功，请在手机上确认登录...", end='')
+        else:
+            print(f"\n登录失败，错误码：{code}")
+            return None
+        time.sleep(2)
