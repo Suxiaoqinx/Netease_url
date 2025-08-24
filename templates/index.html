@@ -98,6 +98,7 @@
                             <option value="parse">单曲解析</option>
                             <option value="playlist">歌单解析</option>
                             <option value="album">专辑解析</option>
+                            <option value="download">音乐下载</option>
                         </select>
                     </div>
                     <div id="search-area">
@@ -150,6 +151,35 @@
                         </div>
                         <div class="text-center">
                             <button type="button" id="album-btn" class="btn btn-info w-50">解析专辑</button>
+                        </div>
+                    </div>
+                    <div id="download-area" style="display:none;">
+                        <div class="mb-3">
+                            <label for="download_id" class="form-label">音乐ID或URL</label>
+                            <input type="text" id="download_id" class="form-control" placeholder="输入音乐ID或网易云音乐链接">
+                        </div>
+                        <div class="mb-3">
+                            <label for="download_quality" class="form-label">下载音质</label>
+                            <select id="download_quality" class="form-select">
+                                <option value="standard">标准音质</option>
+                                <option value="exhigh">极高音质</option>
+                                <option value="lossless" selected>无损音质</option>
+                                <option value="hires">Hires音质</option>
+                                <option value="sky">沉浸环绕声</option>
+                                <option value="jyeffect">高清环绕声</option>
+                                <option value="jymaster">超清母带</option>
+                            </select>
+                        </div>
+                        <div class="text-center">
+                            <button type="button" id="download-btn" class="btn btn-success w-50">下载音乐</button>
+                        </div>
+                        <div id="download-progress" class="mt-3 d-none">
+                            <div class="progress">
+                                <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 100%"></div>
+                            </div>
+                            <div class="text-center mt-2">
+                                <small class="text-muted">正在下载并写入元信息...</small>
+                            </div>
                         </div>
                     </div>
                 </form>
@@ -334,6 +364,7 @@
                     $('#parse-area').hide();
                     $('#playlist-area').hide();
                     $('#album-area').hide();
+                    $('#download-area').hide();
                     $('#song-info').addClass('d-none');
                     $('#playlist-result').addClass('d-none');
                     $('#album-result').addClass('d-none');
@@ -342,6 +373,7 @@
                     $('#parse-area').show();
                     $('#playlist-area').hide();
                     $('#album-area').hide();
+                    $('#download-area').hide();
                     $('#search-result').addClass('d-none');
                     $('#playlist-result').addClass('d-none');
                     $('#album-result').addClass('d-none');
@@ -350,6 +382,7 @@
                     $('#parse-area').hide();
                     $('#playlist-area').show();
                     $('#album-area').hide();
+                    $('#download-area').hide();
                     $('#search-result').addClass('d-none');
                     $('#song-info').addClass('d-none');
                     $('#album-result').addClass('d-none');
@@ -358,12 +391,24 @@
                     $('#parse-area').hide();
                     $('#playlist-area').hide();
                     $('#album-area').show();
+                    $('#download-area').hide();
+                    $('#search-result').addClass('d-none');
+                    $('#song-info').addClass('d-none');
+                    $('#playlist-result').addClass('d-none');
+                    $('#album-result').addClass('d-none');
+                } else if ($(this).val() === 'download') {
+                    $('#search-area').hide();
+                    $('#parse-area').hide();
+                    $('#playlist-area').hide();
+                    $('#album-area').hide();
+                    $('#download-area').show();
                     $('#search-result').addClass('d-none');
                     $('#song-info').addClass('d-none');
                     $('#playlist-result').addClass('d-none');
                     $('#album-result').addClass('d-none');
                 } else {
                     $('#album-area').hide();
+                    $('#download-area').hide();
                     $('#album-result').addClass('d-none');
                 }
             });
@@ -378,19 +423,22 @@
                 }
                 $.ajax({
                     url: '/Search',
-                    method: 'GET',
-                    data: { keywords: keywords, limit: limit },
+                    method: 'POST',
+                    data: { keyword: keywords, limit: limit },
                     dataType: 'json',
                     success: function(data) {
-                        if (data.status === 200 && data.result.length > 0) {
+                        if (data.status === 200) {
                             $('#search-list').empty();
-                            data.result.forEach(function(song) {
+                            data.data.forEach(function(song) {
                                 const item = `<li class="list-group-item d-flex justify-content-between align-items-center">
                                     <div>
                                         <img src="${song.picUrl}" alt="cover" style="width:40px;height:40px;object-fit:cover;border-radius:4px;margin-right:10px;">
                                         <strong class='song-title'>${song.name}</strong> - <span>${song.artists}</span> <span class="text-muted">[${song.album}]</span>
                                     </div>
-                                    <button class="btn btn-sm btn-outline-primary select-song" data-id="${song.id}" data-name="${song.name}">解析</button>
+                                    <div>
+                                        <button class="btn btn-sm btn-outline-primary select-song me-2" data-id="${song.id}" data-name="${song.name}">解析</button>
+                                        <button class="btn btn-sm btn-success download-song" data-id="${song.id}" data-name="${song.name}">下载</button>
+                                    </div>
                                 </li>`;
                                 $('#search-list').append(item);
                             });
@@ -425,32 +473,32 @@
                 }
                 $.post('/Song_V1', { url: songIds, level: level, type:'json' }, function(data) {
                     if (data.status === 200) {
-                        $('#song_name').text(data.name);
-                        $('#artist_names').text(data.ar_name);
-                        $('#song_alname').text(data.al_name);
-                        $('#song_level').text(data.level);
-                        $('#song_size').text(data.size);
-                        let processedLyrics = data.lyric;
-                        if (data.tlyric) {
-                            processedLyrics = lrctran(data.lyric, data.tlyric);
+                        $('#song_name').text(data.data.name);
+                        $('#artist_names').text(data.data.ar_name);
+                        $('#song_alname').text(data.data.al_name);
+                        $('#song_level').text(data.data.level);
+                        $('#song_size').text(data.data.size);
+                        let processedLyrics = data.data.lyric;
+                        if (data.data.tlyric) {
+                            processedLyrics = lrctran(data.data.lyric, data.data.tlyric);
                         }
                         $('#lyric').html(processedLyrics.replace(/\n/g, '<br>'));
-                        $('#song_url').attr('href', data.url).text('点击下载');
+                        $('#song_url').attr('href', data.data.url).text('点击下载');
                         $('#song-info').removeClass('d-none');
-                        $('#show-big-pic').data('pic', data.pic);
+                        $('#show-big-pic').data('pic', data.data.pic);
                         new APlayer({
                             container: document.getElementById('aplayer'),
                             lrcType: 1,
                             audio: [{
-                                name: data.name,
-                                artist: data.ar_name,
-                                url: data.url,
-                                cover: data.pic,
+                                name: data.data.name,
+                                artist: data.data.ar_name,
+                                url: data.data.url,
+                                cover: data.data.pic,
                                 lrc: processedLyrics
                             }]
                         });
                     } else {
-                        alert(data.msg);
+                        alert(data.data.msg);
                     }
                 }, 'json');
             });
@@ -475,7 +523,7 @@
                 if (idMatch) pid = idMatch[1];
                 $.get('/Playlist', { id: pid }, function(data) {
                     if (data.status === 200) {
-                        const pl = data.playlist;
+                        const pl = data.data.playlist;
                         $('#playlist-cover').attr('src', pl.coverImgUrl);
                         $('#playlist-name').text(pl.name);
                         $('#playlist-creator').text('by ' + pl.creator);
@@ -488,14 +536,17 @@
                                     <img src="${song.picUrl}" alt="cover" style="width:32px;height:32px;object-fit:cover;border-radius:4px;margin-right:8px;">
                                     <strong class="playlist-title">${idx+1}. ${song.name}</strong> - <span>${song.artists}</span> <span class="text-muted">[${song.album}]</span>
                                 </div>
-                                <button class="btn btn-sm btn-outline-primary select-song" data-id="${song.id}" data-name="${song.name}">解析</button>
+                                <div>
+                                    <button class="btn btn-sm btn-outline-primary select-song me-2" data-id="${song.id}" data-name="${song.name}">解析</button>
+                                    <button class="btn btn-sm btn-success download-song" data-id="${song.id}" data-name="${song.name}">下载</button>
+                                </div>
                             </li>`;
                             $('#playlist-tracks').append(item);
                         });
                         $('#playlist-result').removeClass('d-none');
                     } else {
                         $('#playlist-result').removeClass('d-none');
-                        $('#playlist-tracks').html('<li class="list-group-item">歌单解析失败：'+data.msg+'</li>');
+                        $('#playlist-tracks').html('<li class="list-group-item">歌单解析失败：'+data.data.msg+'</li>');
                     }
                 }, 'json');
             });
@@ -512,7 +563,7 @@
                 if (idMatch) aid = idMatch[1];
                 $.get('/Album', { id: aid }, function(data) {
                     if (data.status === 200) {
-                        const al = data.album;
+                        const al = data.data.album;
                         $('#album-cover').attr('src', al.coverImgUrl);
                         $('#album-name').text(al.name);
                         $('#album-artist').text(al.artist);
@@ -525,16 +576,107 @@
                                     <img src="${song.picUrl}" alt="cover" style="width:32px;height:32px;object-fit:cover;border-radius:4px;margin-right:8px;">
                                     <strong class="playlist-title">${idx+1}. ${song.name}</strong> - <span>${song.artists}</span> <span class="text-muted">[${song.album}]</span>
                                 </div>
-                                <button class="btn btn-sm btn-outline-primary select-song" data-id="${song.id}" data-name="${song.name}">解析</button>
+                                <div>
+                                    <button class="btn btn-sm btn-outline-primary select-song me-2" data-id="${song.id}" data-name="${song.name}">解析</button>
+                                    <button class="btn btn-sm btn-success download-song" data-id="${song.id}" data-name="${song.name}">下载</button>
+                                </div>
                             </li>`;
                             $('#album-tracks').append(item);
                         });
                         $('#album-result').removeClass('d-none');
                     } else {
                         $('#album-result').removeClass('d-none');
-                        $('#album-tracks').html('<li class="list-group-item">专辑解析失败：'+data.msg+'</li>');
+                        $('#album-tracks').html('<li class="list-group-item">专辑解析失败：'+data.data.msg+'</li>');
                     }
                 }, 'json');
+            });
+
+            // 音乐下载功能
+            $('#download-btn').on('click', function() {
+                const musicId = $('#download_id').val().trim();
+                const quality = $('#download_quality').val();
+                
+                if (!musicId) {
+                    alert('请输入音乐ID或URL');
+                    return;
+                }
+                
+                // 提取ID（支持URL格式）
+                let processedId = musicId;
+                const idMatch = musicId.match(/song\?id=(\d+)/);
+                if (idMatch) {
+                    processedId = idMatch[1];
+                }
+                
+                // 显示进度条
+                $('#download-progress').removeClass('d-none');
+                $('#download-btn').prop('disabled', true).text('下载中...');
+                
+                // 使用XMLHttpRequest来处理下载并获取响应头
+                const xhr = new XMLHttpRequest();
+                xhr.open('POST', '/Download', true);
+                xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+                xhr.responseType = 'blob';
+                
+                xhr.onload = function() {
+                    if (xhr.status === 200) {
+                        // 获取自定义响应头
+                        const downloadMessage = xhr.getResponseHeader('X-Download-Message');
+                        const encodedFilename = xhr.getResponseHeader('X-Download-Filename');
+                        const filename = encodedFilename ? decodeURIComponent(encodedFilename) : 'music.flac';
+                        
+                        // 创建下载链接
+                        const blob = xhr.response;
+                        const url = window.URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = filename || 'music.flac';
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                        window.URL.revokeObjectURL(url);
+                        
+                        // 显示完成提示
+                        alert('✅ 音乐文件下载完成！');
+                        console.log(`下载完成: ${filename}`);
+                        if (downloadMessage) {
+                            console.log(`服务器消息: ${downloadMessage}`);
+                        }
+                    } else {
+                        alert('下载失败，请重试');
+                    }
+                    
+                    // 重置按钮状态
+                    $('#download-progress').addClass('d-none');
+                    $('#download-btn').prop('disabled', false).text('下载音乐');
+                };
+                
+                xhr.onerror = function() {
+                    alert('下载出错，请重试');
+                    $('#download-progress').addClass('d-none');
+                    $('#download-btn').prop('disabled', false).text('下载音乐');
+                };
+                
+                // 发送请求
+                const formData = `id=${encodeURIComponent(processedId)}&quality=${encodeURIComponent(quality)}`;
+                xhr.send(formData);
+            });
+
+            // 列表中的下载按钮点击事件
+            // 下载按钮点击跳转到下载功能
+            $(document).on('click', '.download-song', function() {
+                const musicId = $(this).data('id');
+                const songName = $(this).data('name');
+                
+                if (!musicId) {
+                    alert('无法获取音乐ID');
+                    return;
+                }
+                
+                // 填充下载ID并跳转到下载功能区域
+                $('#download_id').val(musicId);
+                $('#mode-select').val('download').trigger('change');
+                $('html,body').animate({scrollTop: $('#main-form').offset().top}, 300);
             });
         });
     </script>
