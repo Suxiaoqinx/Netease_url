@@ -67,9 +67,6 @@ pip install -r requirements.txt
 
 #### 3. 配置Cookie
 在 `cookie.txt` 文件中填入黑胶会员账号的Cookie：
-```
-MUSIC_U=你的MUSIC_U值;os=pc;appver=8.9.70;
-```
 
 > 💡 **获取Cookie方法**：登录网易云音乐网页版 → F12开发者工具 → Network标签页 → 复制任意请求的Cookie值
 
@@ -303,3 +300,4 @@ Content-Type: application/json
 ---
 
 欢迎 Star、Fork 和 PR！
+
