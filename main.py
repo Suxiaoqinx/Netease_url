@@ -8,17 +8,15 @@
 - 健康检查
 """
 
-import os
-import sys
 import logging
+import sys
+import time
 import traceback
-from typing import Dict, Any, Optional, Union, Tuple
-from pathlib import Path
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Dict, Any, Optional, Tuple
 from urllib.parse import quote
-
-from flask import Flask, request, jsonify, send_file, render_template, Response
-from werkzeug.exceptions import BadRequest, NotFound, InternalServerError
+from flask import Flask, request, send_file, render_template, Response
 
 try:
     from music_api import (
@@ -644,8 +642,6 @@ def api_info():
 def start_api_server():
     """启动API服务器"""
     try:
-        import time
-        
         print("\n" + "="*60)
         print("🚀 网易云音乐API服务启动中...")
         print("="*60)
