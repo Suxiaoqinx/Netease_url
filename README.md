@@ -275,7 +275,7 @@ Content-Type: application/json
 
 ## 在线演示
 
-[在线解析](https://api.toubiec.cn/wyapi.html)
+[在线解析](https://wyapi.toubiec.cn/)
 
 ---
 
