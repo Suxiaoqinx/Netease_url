@@ -1,6 +1,6 @@
 """
 网易云音乐API服务主程序
-
+Ver1.04
 提供网易云音乐相关API服务，包括：
 - 歌曲信息获取
 - 音乐搜索
@@ -400,6 +400,17 @@ def index() -> str:
             color: #0c5460;
             border-color: #bee5eb;
         }
+        .song-id-badge {
+            font-size: 0.7em;
+            vertical-align: middle;
+            margin-left: 8px;
+        }
+        .search-result-item {
+            padding: 12px 15px;
+        }
+        .search-result-info {
+            flex-grow: 1;
+        }
         /* 歌曲/歌单标题过长自动省略号 */
         .song-title, .playlist-title {
             display: inline-block;
@@ -777,7 +788,14 @@ def index() -> str:
                                 const item = `<li class="list-group-item d-flex justify-content-between align-items-center">
                                     <div>
                                         <img src="${song.picUrl}" alt="cover" style="width:40px;height:40px;object-fit:cover;border-radius:4px;margin-right:10px;">
-                                        <strong class='song-title'>${song.name}</strong> - <span>${song.artists}</span> <span class="text-muted">[${song.album}]</span>
+                                        <div>
+                                            <strong class='song-title'>${song.name}</strong> 
+                                            <span class="badge bg-secondary ms-2">ID: ${song.id}</span>
+                                        </div>
+                                        <div class="mt-1">
+                                            <span class="text-muted">${song.artists}</span> 
+                                            <span class="text-muted ms-2">[${song.album}]</span>
+                                        </div>
                                     </div>
                                     <div>
                                         <button class="btn btn-sm btn-outline-primary select-song me-2" data-id="${song.id}" data-name="${song.name}">解析</button>
@@ -1364,7 +1382,7 @@ def api_info():
     try:
         info = {
             'name': '网易云音乐API服务',
-            'version': '2.0.0',
+            'version': '3.0.0',
             'description': '提供网易云音乐相关API服务',
             'endpoints': {
                 '/health': 'GET - 健康检查',
@@ -1407,7 +1425,11 @@ def start_api_server():
             return
         
         config = APIConfig()
-        
+        print(f"-------程序版本-------")
+        print(f" Main版本      : 1.04")
+        print(f" API版本       : 1.01")
+        print(f" Downloader版本: 1.02")
+        print(f"----------------------")
         print(f"📡 服务地址: http://{config.host}:{config.port}")
         print(f"📁 下载目录: {api_service.downloads_path.absolute()}")
         print(f"📋 日志级别: {config.log_level}")
