@@ -11,7 +11,9 @@
 
 支持歌曲搜索 | 单曲解析 | 歌单解析 | 专辑解析 | 音乐下载
 
-可配合Script-for-Netease_url实现批量下载等功能</div>
+可配合Script-for-Netease_url实现批量下载等功能
+</div>
+<div align="center">
 [一键跳转](https://github.com/GCLabGongchen/Script-for-Netease_url/)
 
 </div>
@@ -317,6 +319,7 @@ Content-Type: application/json
 ---
 
 欢迎 Star、Fork 和 PR！
+
 
 
 
