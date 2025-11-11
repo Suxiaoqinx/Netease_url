@@ -261,15 +261,7 @@ class MusicDownloader:
             raise DownloadException(f"获取音乐信息时发生错误: {e}")
     
     def download_music_file(self, music_id: int, quality: str = "standard") -> DownloadResult:
-        """下载音乐文件到本地
-        
-        Args:
-            music_id: 音乐ID
-            quality: 音质等级
-            
-        Returns:
-            下载结果对象
-        """
+        """下载音乐文件到本地"""
         try:
             self.logger.info(f"开始下载音乐 - ID: {music_id}, 音质: {quality}")
             
@@ -284,7 +276,9 @@ class MusicDownloader:
             file_ext = self._determine_file_extension(music_info.download_url)
             file_path = self.download_dir / f"{safe_filename}{file_ext}"
             
-            self.logger.info(f"目标文件: {file_path.name}")
+            # 确保下载目录存在且是正确路径
+            self.download_dir.mkdir(parents=True, exist_ok=True)
+            self.logger.info(f"目标文件路径: {file_path.absolute()}")
             
             # 检查文件是否已存在
             if file_path.exists():
@@ -292,7 +286,7 @@ class MusicDownloader:
                 self.logger.info(f"文件已存在，跳过下载 - 大小: {self._format_file_size(file_size)}")
                 return DownloadResult(
                     success=True,
-                    file_path=str(file_path),
+                    file_path=str(file_path.absolute()),  # 使用绝对路径
                     file_size=file_size,
                     music_info=music_info
                 )
@@ -323,26 +317,17 @@ class MusicDownloader:
             
             return DownloadResult(
                 success=True,
-                file_path=str(file_path),
+                file_path=str(file_path.absolute()),  # 返回绝对路径
                 file_size=final_size,
                 music_info=music_info
             )
             
-        except DownloadException:
-            raise
-        except requests.RequestException as e:
-            self.logger.error(f"下载请求失败: {e}")
-            return DownloadResult(
-                success=False,
-                error_message=f"下载请求失败: {e}"
-            )
         except Exception as e:
             self.logger.error(f"下载过程中发生错误: {e}")
             return DownloadResult(
                 success=False,
                 error_message=f"下载过程中发生错误: {e}"
             )
-    
     def _write_music_tags(self, file_path: Path, music_info: MusicInfo) -> None:
         """写入音乐标签信息，包括歌词
         
