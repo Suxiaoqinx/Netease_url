@@ -46,6 +46,7 @@ class QualityLevel(Enum):
     SKY = "sky"            # 沉浸环绕声
     JYEFFECT = "jyeffect"  # 高清环绕声
     JYMASTER = "jymaster"  # 超清母带
+    DOLBY = "dolby"      # 杜比全景声
 
 
 @dataclass
