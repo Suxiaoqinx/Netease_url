@@ -174,7 +174,8 @@ class MusicAPIService:
             'hires': "Hi-Res音质",
             'sky': "沉浸环绕声",
             'jyeffect': "高清环绕声",
-            'jymaster': "超清母带"
+            'jymaster': "超清母带",
+            'dolby': "杜比全景声"
         }
         return quality_names.get(quality, f"未知音质({quality})")
     
@@ -680,3 +681,4 @@ def start_api_server():
 
 if __name__ == '__main__':
     start_api_server()
+
