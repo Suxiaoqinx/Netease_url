@@ -227,6 +227,37 @@
                     </div>
                     <div id="playlist-desc" class="mb-2 text-secondary small"></div>
                     <div>共 <span id="playlist-count"></span> 首歌</div>
+                    <div class="mt-3 d-flex flex-wrap align-items-center gap-2">
+                        <div class="d-flex align-items-center gap-2">
+                            <label for="playlist-download-quality" class="form-label mb-0">批量下载音质</label>
+                            <select id="playlist-download-quality" class="form-select w-auto">
+                                <option value="standard">标准音质</option>
+                                <option value="exhigh">极高音质</option>
+                                <option value="lossless" selected>无损音质</option>
+                                <option value="hires">Hires音质</option>
+                                <option value="sky">沉浸环绕声</option>
+                                <option value="jyeffect">高清环绕声</option>
+                                <option value="jymaster">超清母带</option>
+                                <option value="dolby">杜比全景声</option>
+                            </select>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="playlist-song-images" checked>
+                            <label class="form-check-label" for="playlist-song-images">下载歌曲封面</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="playlist-cover-image" checked>
+                            <label class="form-check-label" for="playlist-cover-image">下载歌单封面</label>
+                        </div>
+                        <div class="form-check ms-auto">
+                            <input class="form-check-input" type="checkbox" id="select-all-tracks">
+                            <label class="form-check-label" for="select-all-tracks">全选歌曲</label>
+                        </div>
+                    </div>
+                    <div class="mt-3 d-flex flex-wrap gap-2">
+                        <button class="btn btn-outline-secondary" id="download-playlist-all">下载整张歌单</button>
+                        <button class="btn btn-outline-primary" id="download-playlist-selected">下载已选歌曲</button>
+                    </div>
                 </div>
             </div>
             <ul class="list-group mt-3" id="playlist-tracks"></ul>
@@ -273,6 +304,9 @@
     <script src="https://mirrors.sustech.edu.cn/cdnjs/ajax/libs/twitter-bootstrap/5.1.3/js/bootstrap.bundle.min.js"></script>
     <script>
         $(document).ready(function() {
+            let currentPlaylistId = null;
+            let currentPlaylistName = '';
+
             function lrctrim(lyrics) {
                 const lines = lyrics.split('\n');
                 const data = [];
@@ -525,15 +559,23 @@
                 $.get('/Playlist', { id: pid }, function(data) {
                     if (data.status === 200) {
                         const pl = data.data.playlist;
+                        currentPlaylistId = pl.id;
+                        currentPlaylistName = pl.name || '';
+                        $('#playlist-result').data('playlistId', pl.id);
+                        $('#playlist-result').data('playlistName', pl.name || '');
                         $('#playlist-cover').attr('src', pl.coverImgUrl);
                         $('#playlist-name').text(pl.name);
                         $('#playlist-creator').text('by ' + pl.creator);
                         $('#playlist-desc').text(pl.description || '');
                         $('#playlist-count').text(pl.trackCount);
                         $('#playlist-tracks').empty();
+                        $('#select-all-tracks').prop('checked', false);
                         pl.tracks.forEach(function(song, idx) {
                             const item = `<li class="list-group-item d-flex justify-content-between align-items-center">
-                                <div>
+                                <div class="d-flex align-items-center">
+                                    <div class="form-check me-2">
+                                        <input class="form-check-input playlist-select" type="checkbox" data-id="${song.id}">
+                                    </div>
                                     <img src="${song.picUrl}" alt="cover" style="width:32px;height:32px;object-fit:cover;border-radius:4px;margin-right:8px;">
                                     <strong class="playlist-title">${idx+1}. ${song.name}</strong> - <span>${song.artists}</span> <span class="text-muted">[${song.album}]</span>
                                 </div>
@@ -550,6 +592,84 @@
                         $('#playlist-tracks').html('<li class="list-group-item">歌单解析失败：'+data.data.msg+'</li>');
                     }
                 }, 'json');
+            });
+
+            // 全选歌曲
+            $(document).on('change', '#select-all-tracks', function() {
+                $('.playlist-select').prop('checked', $(this).is(':checked'));
+            });
+
+            function downloadPlaylist(selectedIds = []) {
+                if (!currentPlaylistId) {
+                    alert('请先解析歌单');
+                    return;
+                }
+
+                const payload = {
+                    id: currentPlaylistId,
+                    quality: $('#playlist-download-quality').val(),
+                    song_ids: selectedIds,
+                    download_song_images: $('#playlist-song-images').is(':checked'),
+                    download_playlist_image: $('#playlist-cover-image').is(':checked')
+                };
+
+                const buttons = $('#download-playlist-all, #download-playlist-selected');
+                buttons.prop('disabled', true).text('打包中...');
+
+                fetch('/playlist/download', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                }).then(async response => {
+                    if (!response.ok) {
+                        try {
+                            const err = await response.json();
+                            throw new Error(err.message || '下载失败');
+                        } catch (e) {
+                            throw new Error('下载失败');
+                        }
+                    }
+
+                    const filename = decodeURIComponent(response.headers.get('X-Download-Filename') || `playlist_${currentPlaylistId}.zip`);
+                    const message = response.headers.get('X-Download-Message');
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = filename;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    window.URL.revokeObjectURL(url);
+
+                    if (message) {
+                        alert(message);
+                    }
+                }).catch(err => {
+                    alert(err.message || '下载失败，请重试');
+                }).finally(() => {
+                    $('#download-playlist-all').text('下载整张歌单');
+                    $('#download-playlist-selected').text('下载已选歌曲');
+                    buttons.prop('disabled', false);
+                });
+            }
+
+            $('#download-playlist-all').on('click', function() {
+                downloadPlaylist([]);
+            });
+
+            $('#download-playlist-selected').on('click', function() {
+                const selected = [];
+                $('.playlist-select:checked').each(function() {
+                    selected.push($(this).data('id'));
+                });
+
+                if (!selected.length) {
+                    alert('请先选择要下载的歌曲');
+                    return;
+                }
+
+                downloadPlaylist(selected);
             });
 
             // 专辑解析
