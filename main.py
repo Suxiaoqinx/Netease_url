@@ -13,6 +13,7 @@ import sys
 import time
 import traceback
 from dataclasses import dataclass
+import shutil
 from pathlib import Path
 from typing import Dict, Any, Optional, Tuple
 from urllib.parse import quote
@@ -25,7 +26,7 @@ try:
         playlist_detail, album_detail
     )
     from cookie_manager import CookieManager, CookieException
-    from music_downloader import MusicDownloader, DownloadException, AudioFormat
+    from music_downloader import MusicDownloader, DownloadException, AudioFormat, DownloadResult
 except ImportError as e:
     print(f"导入模块失败: {e}")
     print("请确保所有依赖模块存在且可用")
@@ -43,6 +44,8 @@ class APIConfig:
     request_timeout: int = 30
     log_level: str = 'INFO'
     cors_origins: str = '*'
+    download_song_images: bool = True
+    download_playlist_images: bool = True
 
 
 class APIResponse:
@@ -447,10 +450,124 @@ def get_playlist():
         }
         
         return APIResponse.success(response_data, "获取歌单详情成功")
-        
+
     except Exception as e:
         api_service.logger.error(f"获取歌单异常: {e}\n{traceback.format_exc()}")
         return APIResponse.error(f"获取歌单失败: {str(e)}", 500)
+
+
+@app.route('/playlist/download', methods=['POST'])
+def download_playlist_batch():
+    """批量下载歌单歌曲，并可选择下载封面"""
+    try:
+        data = api_service._safe_get_request_data()
+        playlist_id = data.get('id')
+        quality = data.get('quality', 'lossless')
+        song_ids = data.get('song_ids')
+        download_song_images = data.get('download_song_images')
+        download_playlist_image = data.get('download_playlist_image')
+
+        validation_error = api_service._validate_request_params({'playlist_id': playlist_id})
+        if validation_error:
+            return validation_error
+
+        valid_qualities = ['standard', 'exhigh', 'lossless', 'hires', 'sky', 'jyeffect', 'jymaster', 'dolby']
+        if quality not in valid_qualities:
+            return APIResponse.error(f"无效的音质参数，支持: {', '.join(valid_qualities)}")
+
+        def parse_bool(value, default):
+            if value is None:
+                return default
+            if isinstance(value, bool):
+                return value
+            return str(value).lower() in ['1', 'true', 'yes', 'on']
+
+        download_song_images = parse_bool(download_song_images, api_service.config.download_song_images)
+        download_playlist_image = parse_bool(download_playlist_image, api_service.config.download_playlist_images)
+
+        cookies = api_service._get_cookies()
+        playlist_info = playlist_detail(playlist_id, cookies)
+        if not playlist_info or not playlist_info.get('tracks'):
+            return APIResponse.error("未找到歌单或歌单为空", 404)
+
+        playlist_name = playlist_info.get('name', f"playlist_{playlist_id}")
+        safe_playlist_name = api_service.downloader.sanitize_filename(f"{playlist_name}_{playlist_id}")
+        target_dir = api_service.downloads_path / safe_playlist_name
+        target_dir.mkdir(parents=True, exist_ok=True)
+
+        tracks = playlist_info.get('tracks', [])
+        all_song_ids = [int(track['id']) for track in tracks if 'id' in track]
+
+        if song_ids:
+            if isinstance(song_ids, str):
+                song_ids = [sid for sid in song_ids.split(',') if sid.strip()]
+            selected_ids = set(int(sid) for sid in song_ids)
+            download_ids = [sid for sid in all_song_ids if sid in selected_ids]
+        else:
+            download_ids = all_song_ids
+
+        if not download_ids:
+            return APIResponse.error("没有可下载的歌曲", 400)
+
+        results = []
+        throttled_delay = 0.8
+        for mid in download_ids:
+            try:
+                result = api_service.downloader.download_music_file(
+                    mid,
+                    quality,
+                    target_dir=target_dir,
+                    save_cover=download_song_images
+                )
+            except DownloadException as e:
+                api_service.logger.warning(
+                    f"跳过歌曲 {mid}，获取音乐信息时错误: {e}"
+                )
+                result = DownloadResult(
+                    success=False,
+                    error_message=str(e)
+                )
+            except Exception as e:
+                api_service.logger.warning(
+                    f"跳过歌曲 {mid}，下载过程中异常: {e}"
+                )
+                result = DownloadResult(
+                    success=False,
+                    error_message=str(e)
+                )
+
+            if result.success:
+                results.append(result)
+
+            time.sleep(throttled_delay)
+
+        if download_playlist_image and playlist_info.get('coverImgUrl'):
+            cover_path = target_dir / f"{safe_playlist_name}_cover.jpg"
+            api_service.downloader.download_image(playlist_info['coverImgUrl'], cover_path)
+
+        success_count = len(results)
+        fail_count = len(download_ids) - success_count
+
+        if success_count == 0:
+            return APIResponse.error("歌单中暂无可下载的歌曲或全部歌曲无资源", 404)
+
+        message = f"成功下载 {success_count} 首，失败 {fail_count} 首"
+
+        zip_base = target_dir.parent / target_dir.name
+        zip_path = shutil.make_archive(str(zip_base), 'zip', root_dir=target_dir)
+
+        response = send_file(
+            zip_path,
+            as_attachment=True,
+            download_name=f"{safe_playlist_name}.zip"
+        )
+        response.headers['X-Download-Message'] = message
+        response.headers['X-Download-Filename'] = quote(f"{safe_playlist_name}.zip")
+        return response
+
+    except Exception as e:
+        api_service.logger.error(f"批量下载歌单失败: {e}\n{traceback.format_exc()}")
+        return APIResponse.error(f"批量下载失败: {str(e)}", 500)
 
 
 @app.route('/album', methods=['GET', 'POST'])

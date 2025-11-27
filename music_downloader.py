@@ -107,6 +107,10 @@ class MusicDownloader:
             'flac': AudioFormat.FLAC,
             'm4a': AudioFormat.M4A
         }
+
+    def sanitize_filename(self, filename: str) -> str:
+        """对外暴露的文件名清理方法"""
+        return self._sanitize_filename(filename)
     
     def _sanitize_filename(self, filename: str) -> str:
         """清理文件名，移除非法字符
@@ -225,7 +229,28 @@ class MusicDownloader:
         except Exception as e:
             raise DownloadException(f"获取音乐信息时发生错误: {e}")
     
-    def download_music_file(self, music_id: int, quality: str = "standard") -> DownloadResult:
+    def _ensure_directory(self, target_dir: Path) -> Path:
+        """确保目录存在并返回路径"""
+        target_dir.mkdir(parents=True, exist_ok=True)
+        return target_dir
+
+    def _download_image(self, url: str, dest_path: Path) -> None:
+        """下载图片到目标路径，失败时静默忽略"""
+        try:
+            response = requests.get(url, timeout=15)
+            response.raise_for_status()
+            with open(dest_path, 'wb') as f:
+                f.write(response.content)
+        except Exception:
+            pass
+
+    def download_image(self, url: str, dest_path: Path) -> None:
+        """公开的图片下载接口"""
+        self._download_image(url, dest_path)
+
+    def download_music_file(self, music_id: int, quality: str = "standard",
+                            target_dir: Optional[Path] = None,
+                            save_cover: bool = False) -> DownloadResult:
         """下载音乐文件到本地
         
         Args:
@@ -238,14 +263,15 @@ class MusicDownloader:
         try:
             # 获取音乐信息
             music_info = self.get_music_info(music_id, quality)
-            
+
             # 生成文件名
             filename = f"{music_info.artists} - {music_info.name}"
             safe_filename = self._sanitize_filename(filename)
-            
+            target_dir = self._ensure_directory(target_dir or self.download_dir)
+
             # 确定文件扩展名
             file_ext = self._determine_file_extension(music_info.download_url)
-            file_path = self.download_dir / f"{safe_filename}{file_ext}"
+            file_path = target_dir / f"{safe_filename}{file_ext}"
             
             # 检查文件是否已存在
             if file_path.exists():
@@ -265,9 +291,13 @@ class MusicDownloader:
                 for chunk in response.iter_content(chunk_size=8192):
                     if chunk:
                         f.write(chunk)
-            
+
             # 写入音乐标签
             self._write_music_tags(file_path, music_info)
+
+            if save_cover and music_info.pic_url:
+                cover_path = target_dir / f"{safe_filename}.jpg"
+                self._download_image(music_info.pic_url, cover_path)
             
             return DownloadResult(
                 success=True,
@@ -289,7 +319,9 @@ class MusicDownloader:
                 error_message=f"下载过程中发生错误: {e}"
             )
     
-    async def download_music_file_async(self, music_id: int, quality: str = "standard") -> DownloadResult:
+    async def download_music_file_async(self, music_id: int, quality: str = "standard",
+                                       target_dir: Optional[Path] = None,
+                                       save_cover: bool = False) -> DownloadResult:
         """异步下载音乐文件到本地
         
         Args:
@@ -302,14 +334,15 @@ class MusicDownloader:
         try:
             # 获取音乐信息（同步操作）
             music_info = self.get_music_info(music_id, quality)
-            
+
             # 生成文件名
             filename = f"{music_info.artists} - {music_info.name}"
             safe_filename = self._sanitize_filename(filename)
-            
+            target_dir = self._ensure_directory(target_dir or self.download_dir)
+
             # 确定文件扩展名
             file_ext = self._determine_file_extension(music_info.download_url)
-            file_path = self.download_dir / f"{safe_filename}{file_ext}"
+            file_path = target_dir / f"{safe_filename}{file_ext}"
             
             # 检查文件是否已存在
             if file_path.exists():
@@ -331,6 +364,10 @@ class MusicDownloader:
             
             # 写入音乐标签
             self._write_music_tags(file_path, music_info)
+
+            if save_cover and music_info.pic_url:
+                cover_path = target_dir / f"{safe_filename}.jpg"
+                self._download_image(music_info.pic_url, cover_path)
             
             return DownloadResult(
                 success=True,
@@ -385,21 +422,28 @@ class MusicDownloader:
         except Exception as e:
             raise DownloadException(f"内存下载过程中发生错误: {e}")
     
-    async def download_batch_async(self, music_ids: List[int], quality: str = "standard") -> List[DownloadResult]:
+    async def download_batch_async(self, music_ids: List[int], quality: str = "standard",
+                                  target_dir: Optional[Path] = None,
+                                  save_cover: bool = False) -> List[DownloadResult]:
         """批量异步下载音乐
-        
+
         Args:
             music_ids: 音乐ID列表
             quality: 音质等级
-            
+            target_dir: 目标目录
+            save_cover: 是否保存歌曲封面
+
         Returns:
             下载结果列表
         """
         semaphore = asyncio.Semaphore(self.max_concurrent)
-        
+        target_dir = target_dir or self.download_dir
+
         async def download_with_semaphore(music_id: int) -> DownloadResult:
             async with semaphore:
-                return await self.download_music_file_async(music_id, quality)
+                return await self.download_music_file_async(
+                    music_id, quality, target_dir=target_dir, save_cover=save_cover
+                )
         
         tasks = [download_with_semaphore(music_id) for music_id in music_ids]
         results = await asyncio.gather(*tasks, return_exceptions=True)
