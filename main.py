@@ -21,10 +21,10 @@ from flask import Flask, request, send_file, render_template, Response
 try:
     from music_api import (
         NeteaseAPI, APIException, QualityLevel,
-        url_v1, name_v1, lyric_v1, search_music, 
-        playlist_detail, album_detail
+        url_v1, name_v1, lyric_v1, search_music,
+        playlist_detail, album_detail,
+        load_cookies,
     )
-    from cookie_manager import CookieManager, CookieException
     from music_downloader import MusicDownloader, DownloadException, AudioFormat
 except ImportError as e:
     print(f"导入模块失败: {e}")
@@ -79,14 +79,13 @@ class MusicAPIService:
     def __init__(self, config: APIConfig):
         self.config = config
         self.logger = self._setup_logger()
-        self.cookie_manager = CookieManager()
         self.netease_api = NeteaseAPI()
         self.downloader = MusicDownloader()
-        
+
         # 创建下载目录
         self.downloads_path = Path(config.downloads_dir)
         self.downloads_path.mkdir(exist_ok=True)
-        
+
         self.logger.info(f"音乐API服务初始化完成，下载目录: {self.downloads_path.absolute()}")
     
     def _setup_logger(self) -> logging.Logger:
@@ -117,15 +116,14 @@ class MusicAPIService:
         return logger
     
     def _get_cookies(self) -> Dict[str, str]:
-        """获取Cookie"""
+        """直接从 cookie.txt 读取并解析为 dict"""
         try:
-            cookie_str = self.cookie_manager.read_cookie()
-            return self.cookie_manager.parse_cookie_string(cookie_str)
-        except CookieException as e:
-            self.logger.warning(f"获取Cookie失败: {e}")
-            return {}
+            cookies = load_cookies()
+            if not cookies:
+                self.logger.warning("cookie.txt 为空或不存在，部分接口（VIP 音质）将不可用")
+            return cookies
         except Exception as e:
-            self.logger.error(f"Cookie处理异常: {e}")
+            self.logger.error(f"读取 cookie.txt 异常: {e}")
             return {}
     
     def _extract_music_id(self, id_or_url: str) -> str:
@@ -260,17 +258,19 @@ def index() -> str:
 def health_check():
     """健康检查API"""
     try:
-        # 检查Cookie状态
-        cookie_status = api_service.cookie_manager.is_cookie_valid()
-        
+        # 检查 Cookie 状态：直接读 cookie.txt
+        cookies = load_cookies()
+        cookie_status = 'valid' if cookies else 'invalid'
+
         health_info = {
             'service': 'running',
             'timestamp': int(time.time()) if 'time' in sys.modules else None,
-            'cookie_status': 'valid' if cookie_status else 'invalid',
+            'cookie_status': cookie_status,
+            'cookie_count': len(cookies),
             'downloads_dir': str(api_service.downloads_path.absolute()),
             'version': '2.0.0'
         }
-        
+
         return APIResponse.success(health_info, "API服务运行正常")
         
     except Exception as e:
@@ -298,7 +298,7 @@ def get_song_info():
         music_id = api_service._extract_music_id(song_ids or url)
         
         # 验证音质参数
-        valid_levels = ['standard', 'exhigh', 'lossless', 'hires', 'sky', 'jyeffect', 'jymaster']
+        valid_levels = ['standard', 'exhigh', 'lossless', 'hires', 'sky', 'jyeffect', 'jymaster', 'dolby']
         if level not in valid_levels:
             return APIResponse.error(f"无效的音质参数，支持: {', '.join(valid_levels)}")
         
@@ -500,7 +500,7 @@ def download_music_api():
             return validation_error
         
         # 验证音质参数
-        valid_qualities = ['standard', 'exhigh', 'lossless', 'hires', 'sky', 'jyeffect', 'jymaster']
+        valid_qualities = ['standard', 'exhigh', 'lossless', 'hires', 'sky', 'jyeffect', 'jymaster', 'dolby']
         if quality not in valid_qualities:
             return APIResponse.error(f"无效的音质参数，支持: {', '.join(valid_qualities)}")
         
