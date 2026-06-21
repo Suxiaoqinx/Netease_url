@@ -303,10 +303,12 @@ Content-Type: application/json
 
 - 在 Github [Issues](https://github.com/Suxiaoqinx/Netease_url/issues) 提交反馈
 - 或访问 [我的博客](https://www.toubiec.cn)
+- [Golang二进制单文件分支](https://github.com/SoraKasvgano/wyapi-golang)
 
 ---
 
 欢迎 Star、Fork 和 PR！
+
 
 
 
