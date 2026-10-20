@@ -83,6 +83,26 @@
             line-height: 1.7;
             margin-bottom: 0;
         }
+        /* 批量下载面板 */
+        .batch-track-list {
+            max-height: 340px;
+            overflow-y: auto;
+            border-top: 1px solid #eee;
+        }
+        .batch-track .batch-track-progress {
+            height: 4px;
+            background-color: #e9ecef;
+        }
+        .batch-track .batch-track-progress .progress-bar {
+            transition: width .3s ease;
+        }
+        .batch-track .batch-track-link {
+            flex-shrink: 0;
+        }
+        #playlist-result .batch-controls,
+        #album-result .batch-controls {
+            row-gap: .5rem;
+        }
     </style>
 </head>
 <body>
@@ -228,6 +248,24 @@
                     </div>
                     <div id="playlist-desc" class="mb-2 text-secondary small"></div>
                     <div>共 <span id="playlist-count"></span> 首歌</div>
+                    <div class="d-flex flex-wrap align-items-center gap-2 mt-3 pt-2 border-top batch-controls">
+                        <div class="form-check me-2">
+                            <input class="form-check-input" type="checkbox" id="playlist-select-all" checked>
+                            <label class="form-check-label" for="playlist-select-all">全选</label>
+                        </div>
+                        <select id="playlist-quality" class="form-select form-select-sm" style="width:auto;" title="批量下载音质">
+                            <option value="standard">标准音质</option>
+                            <option value="exhigh">极高音质</option>
+                            <option value="lossless" selected>无损音质</option>
+                            <option value="hires">Hires音质</option>
+                            <option value="sky">沉浸环绕声</option>
+                            <option value="jyeffect">高清环绕声</option>
+                            <option value="jymaster">超清母带</option>
+                            <option value="dolby">杜比全景声</option>
+                        </select>
+                        <button type="button" id="playlist-download-all" class="btn btn-sm btn-success">批量下载全部</button>
+                        <button type="button" id="playlist-download-selected" class="btn btn-sm btn-outline-success">下载选中</button>
+                    </div>
                 </div>
             </div>
             <ul class="list-group mt-3" id="playlist-tracks"></ul>
@@ -245,9 +283,47 @@
                     </div>
                     <div id="album-desc" class="mb-2 text-secondary small"></div>
                     <div>共 <span id="album-count"></span> 首歌</div>
+                    <div class="d-flex flex-wrap align-items-center gap-2 mt-3 pt-2 border-top batch-controls">
+                        <div class="form-check me-2">
+                            <input class="form-check-input" type="checkbox" id="album-select-all" checked>
+                            <label class="form-check-label" for="album-select-all">全选</label>
+                        </div>
+                        <select id="album-quality" class="form-select form-select-sm" style="width:auto;" title="批量下载音质">
+                            <option value="standard">标准音质</option>
+                            <option value="exhigh">极高音质</option>
+                            <option value="lossless" selected>无损音质</option>
+                            <option value="hires">Hires音质</option>
+                            <option value="sky">沉浸环绕声</option>
+                            <option value="jyeffect">高清环绕声</option>
+                            <option value="jymaster">超清母带</option>
+                            <option value="dolby">杜比全景声</option>
+                        </select>
+                        <button type="button" id="album-download-all" class="btn btn-sm btn-success">批量下载全部</button>
+                        <button type="button" id="album-download-selected" class="btn btn-sm btn-outline-success">下载选中</button>
+                    </div>
                 </div>
             </div>
             <ul class="list-group mt-3" id="album-tracks"></ul>
+        </div>
+        <!-- 批量下载进度面板 -->
+        <div id="batch-panel" class="mt-4 d-none">
+            <div class="card border-success shadow-sm">
+                <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
+                    <span class="text-truncate me-2">批量下载：<strong id="batch-name"></strong></span>
+                    <span id="batch-status-badge" class="badge bg-light text-dark flex-shrink-0">准备中</span>
+                </div>
+                <div class="card-body">
+                    <div class="progress mb-2" style="height:22px;">
+                        <div id="batch-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated bg-success" role="progressbar" style="width:0%;">0%</div>
+                    </div>
+                    <div class="small text-muted mb-2" id="batch-summary">正在创建任务...</div>
+                    <div class="d-flex flex-wrap gap-2 mb-3">
+                        <button type="button" id="batch-zip-btn" class="btn btn-sm btn-primary d-none">打包下载已完成文件（ZIP）</button>
+                        <button type="button" id="batch-cancel-btn" class="btn btn-sm btn-outline-danger">取消下载</button>
+                    </div>
+                    <div id="batch-tracks" class="batch-track-list"></div>
+                </div>
+            </div>
         </div>
     </div>
     <!-- Modal for big picture -->
@@ -274,6 +350,23 @@
     <script src="https://mirrors.sustech.edu.cn/cdnjs/ajax/libs/twitter-bootstrap/5.1.3/js/bootstrap.bundle.min.js"></script>
     <script>
         $(document).ready(function() {
+            // ===== 批量下载状态 =====
+            let playlistTracks = [];
+            let albumTracks = [];
+            let currentBatchJobId = null;
+            let batchPollTimer = null;
+            let batchPollFailures = 0;
+            let batchZipBusy = false;
+
+            function escapeHtml(text) {
+                return String(text == null ? '' : text)
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;')
+                    .replace(/'/g, '&#39;');
+            }
+
             function lrctrim(lyrics) {
                 const lines = lyrics.split('\n');
                 const data = [];
@@ -532,23 +625,27 @@
                         $('#playlist-desc').text(pl.description || '');
                         $('#playlist-count').text(pl.trackCount);
                         $('#playlist-tracks').empty();
-                        pl.tracks.forEach(function(song, idx) {
+                        playlistTracks = pl.tracks || [];
+                        $('#playlist-select-all').prop('checked', true);
+                        playlistTracks.forEach(function(song, idx) {
                             const item = `<li class="list-group-item d-flex justify-content-between align-items-center">
-                                <div>
-                                    <img src="${song.picUrl}" alt="cover" style="width:32px;height:32px;object-fit:cover;border-radius:4px;margin-right:8px;">
-                                    <strong class="playlist-title">${idx+1}. ${song.name}</strong> - <span>${song.artists}</span> <span class="text-muted">[${song.album}]</span>
+                                <div class="d-flex align-items-center" style="min-width:0;">
+                                    <input class="form-check-input batch-checkbox me-2 flex-shrink-0" type="checkbox" data-index="${idx}" checked>
+                                    <img src="${escapeHtml(song.picUrl)}" alt="cover" style="width:32px;height:32px;object-fit:cover;border-radius:4px;margin-right:8px;">
+                                    <strong class="playlist-title">${idx+1}. ${escapeHtml(song.name)}</strong> - <span>${escapeHtml(song.artists)}</span> <span class="text-muted">[${escapeHtml(song.album)}]</span>
                                 </div>
-                                <div>
-                                    <button class="btn btn-sm btn-outline-primary select-song me-2" data-id="${song.id}" data-name="${song.name}">解析</button>
-                                    <button class="btn btn-sm btn-success download-song" data-id="${song.id}" data-name="${song.name}">下载</button>
+                                <div class="flex-shrink-0">
+                                    <button class="btn btn-sm btn-outline-primary select-song me-2" data-id="${song.id}">解析</button>
+                                    <button class="btn btn-sm btn-success download-song" data-id="${song.id}">下载</button>
                                 </div>
                             </li>`;
                             $('#playlist-tracks').append(item);
                         });
                         $('#playlist-result').removeClass('d-none');
                     } else {
+                        playlistTracks = [];
                         $('#playlist-result').removeClass('d-none');
-                        $('#playlist-tracks').html('<li class="list-group-item">歌单解析失败：'+data.data.msg+'</li>');
+                        $('#playlist-tracks').html('<li class="list-group-item">歌单解析失败：' + escapeHtml(data.message || (data.data && data.data.msg) || '未知错误') + '</li>');
                     }
                 }, 'json');
             });
@@ -572,23 +669,27 @@
                         $('#album-desc').text(al.description || '');
                         $('#album-count').text(al.songs.length);
                         $('#album-tracks').empty();
-                        al.songs.forEach(function(song, idx) {
+                        albumTracks = al.songs || [];
+                        $('#album-select-all').prop('checked', true);
+                        albumTracks.forEach(function(song, idx) {
                             const item = `<li class="list-group-item d-flex justify-content-between align-items-center">
-                                <div>
-                                    <img src="${song.picUrl}" alt="cover" style="width:32px;height:32px;object-fit:cover;border-radius:4px;margin-right:8px;">
-                                    <strong class="playlist-title">${idx+1}. ${song.name}</strong> - <span>${song.artists}</span> <span class="text-muted">[${song.album}]</span>
+                                <div class="d-flex align-items-center" style="min-width:0;">
+                                    <input class="form-check-input batch-checkbox me-2 flex-shrink-0" type="checkbox" data-index="${idx}" checked>
+                                    <img src="${escapeHtml(song.picUrl)}" alt="cover" style="width:32px;height:32px;object-fit:cover;border-radius:4px;margin-right:8px;">
+                                    <strong class="playlist-title">${idx+1}. ${escapeHtml(song.name)}</strong> - <span>${escapeHtml(song.artists)}</span> <span class="text-muted">[${escapeHtml(song.album)}]</span>
                                 </div>
-                                <div>
-                                    <button class="btn btn-sm btn-outline-primary select-song me-2" data-id="${song.id}" data-name="${song.name}">解析</button>
-                                    <button class="btn btn-sm btn-success download-song" data-id="${song.id}" data-name="${song.name}">下载</button>
+                                <div class="flex-shrink-0">
+                                    <button class="btn btn-sm btn-outline-primary select-song me-2" data-id="${song.id}">解析</button>
+                                    <button class="btn btn-sm btn-success download-song" data-id="${song.id}">下载</button>
                                 </div>
                             </li>`;
                             $('#album-tracks').append(item);
                         });
                         $('#album-result').removeClass('d-none');
                     } else {
+                        albumTracks = [];
                         $('#album-result').removeClass('d-none');
-                        $('#album-tracks').html('<li class="list-group-item">专辑解析失败：'+data.data.msg+'</li>');
+                        $('#album-tracks').html('<li class="list-group-item">专辑解析失败：' + escapeHtml(data.message || (data.data && data.data.msg) || '未知错误') + '</li>');
                     }
                 }, 'json');
             });
@@ -679,6 +780,313 @@
                 $('#download_id').val(musicId);
                 $('#mode-select').val('download').trigger('change');
                 $('html,body').animate({scrollTop: $('#main-form').offset().top}, 300);
+            });
+
+            // ==================== 批量下载 ====================
+
+            const batchJobStatus = {
+                pending: ['等待中', 'bg-secondary'],
+                running: ['下载中', 'bg-info text-dark'],
+                cancelling: ['取消中', 'bg-warning text-dark'],
+                completed: ['已完成', 'bg-success'],
+                cancelled: ['已取消', 'bg-warning text-dark'],
+                failed: ['失败', 'bg-danger']
+            };
+
+            const batchTrackStatus = {
+                pending: ['等待', 'bg-secondary'],
+                downloading: ['下载中', 'bg-info text-dark'],
+                success: ['完成', 'bg-success'],
+                skipped: ['已存在', 'bg-secondary'],
+                failed: ['失败', 'bg-danger'],
+                cancelled: ['已取消', 'bg-warning text-dark']
+            };
+
+            function startBatchDownload(kind, onlySelected) {
+                const allTracks = kind === 'playlist' ? playlistTracks : albumTracks;
+                const containerSel = kind === 'playlist' ? '#playlist-tracks' : '#album-tracks';
+                let chosen = allTracks.slice();
+
+                if (onlySelected) {
+                    chosen = [];
+                    $(containerSel + ' .batch-checkbox:checked').each(function() {
+                        const idx = parseInt($(this).attr('data-index'), 10);
+                        if (!isNaN(idx) && allTracks[idx]) {
+                            chosen.push(allTracks[idx]);
+                        }
+                    });
+                }
+
+                if (!chosen.length) {
+                    alert('请至少选择一首歌曲');
+                    return;
+                }
+
+                const quality = $('#' + kind + '-quality').val() || 'lossless';
+                const name = kind === 'playlist'
+                    ? ($('#playlist-name').text() || '歌单批量下载')
+                    : ($('#album-name').text() || '专辑批量下载');
+
+                if (batchPollTimer) {
+                    clearTimeout(batchPollTimer);
+                    batchPollTimer = null;
+                }
+                batchPollFailures = 0;
+                currentBatchJobId = null;
+
+                $('#batch-panel').removeClass('d-none');
+                $('#batch-name').text(name);
+                $('#batch-status-badge').attr('class', 'badge bg-secondary flex-shrink-0').text('创建中');
+                $('#batch-progress-bar')
+                    .attr('class', 'progress-bar progress-bar-striped progress-bar-animated bg-success')
+                    .css('width', '0%').text('0%');
+                $('#batch-summary').text('正在提交 ' + chosen.length + ' 首歌曲...');
+                $('#batch-tracks').empty();
+                $('#batch-zip-btn').addClass('d-none');
+                $('#batch-cancel-btn').prop('disabled', false).text('取消下载');
+                $('html,body').animate({scrollTop: $('#batch-panel').offset().top - 20}, 300);
+
+                $.ajax({
+                    url: '/batch/download',
+                    method: 'POST',
+                    contentType: 'application/json',
+                    dataType: 'json',
+                    data: JSON.stringify({
+                        type: 'tracks',
+                        tracks: chosen,
+                        quality: quality,
+                        name: name,
+                        fallback: true
+                    })
+                }).done(function(res) {
+                    if (res && res.status === 200 && res.data && res.data.job_id) {
+                        currentBatchJobId = res.data.job_id;
+                        renderBatch(res.data);
+                        pollBatch(res.data.job_id);
+                    } else {
+                        $('#batch-summary').text('创建任务失败：' + ((res && res.message) || '未知错误'));
+                        $('#batch-status-badge').attr('class', 'badge bg-danger flex-shrink-0').text('失败');
+                        $('#batch-cancel-btn').prop('disabled', true);
+                    }
+                }).fail(function(xhr) {
+                    let message = '创建任务失败，请重试';
+                    try {
+                        const body = JSON.parse(xhr.responseText);
+                        if (body && body.message) message = body.message;
+                    } catch (e) { /* ignore */ }
+                    $('#batch-summary').text(message);
+                    $('#batch-status-badge').attr('class', 'badge bg-danger flex-shrink-0').text('失败');
+                    $('#batch-cancel-btn').prop('disabled', true);
+                });
+            }
+
+            function renderBatch(job) {
+                const tracks = job.tracks || [];
+
+                // 曲目数量变化时重建列表，其余情况原地更新，避免闪烁
+                if ($('#batch-tracks .batch-track').length !== tracks.length) {
+                    $('#batch-tracks').empty();
+                    tracks.forEach(function(track) {
+                        const $row = $('<div class="batch-track d-flex align-items-center py-1">')
+                            .attr('data-index', track.index);
+
+                        $row.append(
+                            $('<span class="batch-track-index text-muted small me-2 flex-shrink-0">')
+                                .text((track.index + 1) + '.')
+                                .css('min-width', '2.6em')
+                        );
+
+                        const $info = $('<div class="flex-grow-1 me-2" style="min-width:0;">');
+                        const $title = $('<div class="text-truncate">');
+                        $title.append($('<span class="batch-track-name fw-semibold">').text(track.name || ''));
+                        $title.append(document.createTextNode(' '));
+                        $title.append($('<span class="batch-track-artist text-muted small">').text(track.artists || ''));
+                        $info.append($title);
+                        $info.append(
+                            $('<div class="progress batch-track-progress mt-1">')
+                                .append($('<div class="progress-bar bg-info" style="width:0%;">'))
+                        );
+                        $info.append($('<div class="batch-track-error text-danger small text-truncate">'));
+
+                        $row.append($info);
+                        $row.append(
+                            $('<span class="badge batch-track-status bg-secondary flex-shrink-0">').text('等待')
+                        );
+                        $row.append(
+                            $('<a class="batch-track-link btn btn-sm btn-outline-primary ms-2 flex-shrink-0 d-none">')
+                                .text('下载')
+                        );
+                        $('#batch-tracks').append($row);
+                    });
+                }
+
+                tracks.forEach(function(track) {
+                    const $row = $('#batch-tracks .batch-track[data-index="' + track.index + '"]');
+                    if (!$row.length) return;
+
+                    const info = batchTrackStatus[track.status] || [track.status, 'bg-secondary'];
+                    $row.find('.batch-track-status')
+                        .attr('class', 'badge batch-track-status flex-shrink-0 ' + info[1])
+                        .text(info[0]);
+
+                    if (track.name) $row.find('.batch-track-name').text(track.name);
+                    $row.find('.batch-track-artist').text(track.artists || '');
+
+                    let barColor = 'bg-info';
+                    if (track.status === 'success' || track.status === 'skipped') barColor = 'bg-success';
+                    else if (track.status === 'failed') barColor = 'bg-danger';
+                    else if (track.status === 'cancelled') barColor = 'bg-warning';
+
+                    $row.find('.batch-track-progress .progress-bar')
+                        .attr('class', 'progress-bar ' + barColor)
+                        .css('width', Number(track.progress || 0) + '%');
+
+                    $row.find('.batch-track-error')
+                        .text(track.status === 'failed' ? (track.error || '下载失败') : '');
+
+                    const $link = $row.find('.batch-track-link');
+                    if (track.file_url && (track.status === 'success' || track.status === 'skipped')) {
+                        $link.removeClass('d-none').attr('href', track.file_url);
+                    } else {
+                        $link.addClass('d-none').attr('href', '#');
+                    }
+                });
+
+                const jobInfo = batchJobStatus[job.status] || [job.status, 'bg-secondary'];
+                $('#batch-status-badge')
+                    .attr('class', 'badge flex-shrink-0 ' + jobInfo[1])
+                    .text(jobInfo[0]);
+
+                const progress = Number(job.progress || 0);
+                const finished = ['completed', 'cancelled', 'failed'].indexOf(job.status) !== -1;
+                const progressColor = job.status === 'failed'
+                    ? 'bg-danger'
+                    : (job.status === 'cancelled' ? 'bg-warning' : 'bg-success');
+                $('#batch-progress-bar')
+                    .attr('class', 'progress-bar ' + (finished ? '' : 'progress-bar-striped progress-bar-animated ') + progressColor)
+                    .css('width', progress + '%')
+                    .text(progress.toFixed(0) + '%');
+
+                const successCount = Number(job.success || 0) + Number(job.skipped || 0);
+                $('#batch-summary').text(
+                    '共 ' + job.total + ' 首 | 成功 ' + job.success +
+                    ' | 已存在 ' + job.skipped +
+                    ' | 失败 ' + job.failed +
+                    ' | 取消 ' + job.cancelled +
+                    (job.downloading ? ' | 正在下载 ' + job.downloading + ' 首' : '')
+                );
+
+                $('#batch-zip-btn').toggleClass('d-none', successCount <= 0);
+                $('#batch-cancel-btn').prop('disabled', finished).text('取消下载');
+            }
+
+            function pollBatch(jobId) {
+                if (batchPollTimer) {
+                    clearTimeout(batchPollTimer);
+                    batchPollTimer = null;
+                }
+
+                $.ajax({
+                    url: '/batch/status/' + encodeURIComponent(jobId),
+                    method: 'GET',
+                    dataType: 'json',
+                    cache: false
+                }).done(function(res) {
+                    if (!res || res.status !== 200 || !res.data) {
+                        $('#batch-summary').text('获取任务状态失败：' + ((res && res.message) || '未知错误'));
+                        $('#batch-status-badge').attr('class', 'badge bg-danger flex-shrink-0').text('失败');
+                        return;
+                    }
+
+                    batchPollFailures = 0;
+                    renderBatch(res.data);
+
+                    if (['completed', 'cancelled', 'failed'].indexOf(res.data.status) === -1) {
+                        batchPollTimer = setTimeout(function() {
+                            pollBatch(jobId);
+                        }, 1000);
+                    }
+                }).fail(function() {
+                    batchPollFailures += 1;
+                    if (batchPollFailures > 5) {
+                        $('#batch-summary').text('无法连接服务器，已停止刷新进度（下载任务可能仍在后台进行）');
+                        return;
+                    }
+                    batchPollTimer = setTimeout(function() {
+                        pollBatch(jobId);
+                    }, 2000);
+                });
+            }
+
+            // 全选 / 反选
+            $('#playlist-select-all').on('change', function() {
+                $('#playlist-tracks .batch-checkbox').prop('checked', this.checked);
+            });
+            $('#album-select-all').on('change', function() {
+                $('#album-tracks .batch-checkbox').prop('checked', this.checked);
+            });
+
+            function syncSelectAll(kind) {
+                const containerSel = kind === 'playlist' ? '#playlist-tracks' : '#album-tracks';
+                const all = $(containerSel + ' .batch-checkbox').length;
+                const checked = $(containerSel + ' .batch-checkbox:checked').length;
+                $('#' + kind + '-select-all').prop('checked', all > 0 && all === checked);
+            }
+
+            $(document).on('change', '#playlist-tracks .batch-checkbox', function() {
+                syncSelectAll('playlist');
+            });
+            $(document).on('change', '#album-tracks .batch-checkbox', function() {
+                syncSelectAll('album');
+            });
+
+            // 批量下载按钮
+            $('#playlist-download-all').on('click', function() {
+                startBatchDownload('playlist', false);
+            });
+            $('#playlist-download-selected').on('click', function() {
+                startBatchDownload('playlist', true);
+            });
+            $('#album-download-all').on('click', function() {
+                startBatchDownload('album', false);
+            });
+            $('#album-download-selected').on('click', function() {
+                startBatchDownload('album', true);
+            });
+
+            // 取消下载
+            $('#batch-cancel-btn').on('click', function() {
+                if (!currentBatchJobId) return;
+
+                const $btn = $(this);
+                $btn.prop('disabled', true).text('取消中...');
+
+                $.ajax({
+                    url: '/batch/cancel/' + encodeURIComponent(currentBatchJobId),
+                    method: 'POST',
+                    dataType: 'json'
+                }).done(function(res) {
+                    if (res && res.data) renderBatch(res.data);
+                    if (res && res.message) $('#batch-summary').text(res.message);
+                }).always(function() {
+                    $btn.text('取消下载');
+                });
+            });
+
+            // 打包下载已完成文件（流式 ZIP，不占用额外磁盘；按钮防重复点击）
+            $('#batch-zip-btn').on('click', function() {
+                if (!currentBatchJobId || batchZipBusy) return;
+
+                const $btn = $(this);
+                batchZipBusy = true;
+                $btn.prop('disabled', true).text('正在打包下载...');
+
+                window.location.href = '/batch/zip/' + encodeURIComponent(currentBatchJobId);
+
+                setTimeout(function() {
+                    batchZipBusy = false;
+                    $btn.prop('disabled', false).text('打包下载已完成文件（ZIP）');
+                }, 10000);
             });
         });
     </script>

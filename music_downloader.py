@@ -2,15 +2,16 @@
 
 提供功能：
 - 同步 / 异步下载（本地落盘 / 内存返回）
-- 批量并发下载
+- 批量并发下载 / 下载进度回调
 - 进度查询
 - 基于 ffmpeg 的元数据 + 封面写入（MP3/FLAC/M4A/MP4/OGG/Opus）
 
 设计要点：
-1. ffmpeg 路径懒加载：每次写入前重新检测，支持服务启动后中途安装
-2. 显式 -f 指定输出格式 + 临时文件保留原扩展名在最后，双保险
-3. MP4（杜比全景声 EAC3）单独分支，启用 +faststart
-4. 扩展名优先使用 API 返回的 type 字段，URL/Content-Type 兜底
+1. 下载先写同目录 ``.part`` 临时文件，完整校验后原子替换，避免中断产生损坏文件
+2. ffmpeg 路径懒加载：每次写入前重新检测，支持服务启动后中途安装
+3. 显式 -f 指定输出格式 + 临时文件保留原扩展名在最后，双保险
+4. MP4（杜比全景声 EAC3）单独分支，启用 +faststart
+5. 扩展名优先使用 API 返回的 type 字段，URL/Content-Type 兜底
 """
 
 from __future__ import annotations
@@ -21,11 +22,12 @@ import re
 import shutil
 import subprocess
 import tempfile
+import time
 from dataclasses import dataclass
 from enum import Enum
 from io import BytesIO
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import aiofiles
 import aiohttp
@@ -83,11 +85,17 @@ class DownloadResult:
     file_size: int = 0
     error_message: str = ""
     music_info: Optional[MusicInfo] = None
+    # 文件已存在、未重复下载时为 True
+    skipped: bool = False
 
 
 class DownloadException(Exception):
     """下载异常类"""
     pass
+
+
+# 下载进度回调：(已下载字节数, 总字节数)，总字节数未知时为 0
+ProgressCallback = Callable[[int, int], None]
 
 
 # ============ 工具映射表 ============
@@ -211,7 +219,6 @@ class MusicDownloader:
             cookies = load_cookies()
 
             url_result = self.api.get_song_url(music_id, quality, cookies)
-            print(url_result)
             if not url_result.get("data") or not url_result["data"]:
                 raise DownloadException(f"无法获取音乐ID {music_id} 的播放链接")
 
@@ -227,22 +234,25 @@ class MusicDownloader:
             song_detail = detail_result["songs"][0]
 
             lyric_result = self.api.get_lyric(music_id, cookies)
-            lyric = lyric_result.get("lrc", {}).get("lyric", "") if lyric_result else ""
-            tlyric = lyric_result.get("tlyric", {}).get("lyric", "") if lyric_result else ""
+            lyric = (lyric_result.get("lrc") or {}).get("lyric", "") if lyric_result else ""
+            tlyric = (lyric_result.get("tlyric") or {}).get("lyric", "") if lyric_result else ""
 
-            artists = "/".join(a["name"] for a in song_detail.get("ar", []))
+            artists = "/".join(
+                artist.get("name", "") for artist in (song_detail.get("ar") or [])
+            )
+            album_info = song_detail.get("al") or {}
 
             return MusicInfo(
                 id=music_id,
-                name=song_detail.get("name", "未知歌曲"),
+                name=song_detail.get("name") or "未知歌曲",
                 artists=artists or "未知艺术家",
-                album=song_detail.get("al", {}).get("name", "未知专辑"),
-                pic_url=song_detail.get("al", {}).get("picUrl", ""),
-                duration=song_detail.get("dt", 0) // 1000,
-                track_number=song_detail.get("no", 0),
+                album=album_info.get("name") or "未知专辑",
+                pic_url=album_info.get("picUrl") or "",
+                duration=int((song_detail.get("dt") or 0) // 1000),
+                track_number=int(song_detail.get("no") or 0),
                 download_url=download_url,
-                file_type=song_data.get("type", "mp3").lower(),
-                file_size=song_data.get("size", 0),
+                file_type=(song_data.get("type") or "mp3").lower(),
+                file_size=int(song_data.get("size") or 0),
                 quality=quality,
                 lyric=lyric,
                 tlyric=tlyric,
@@ -271,8 +281,19 @@ class MusicDownloader:
         self,
         music_id: int,
         quality: str = "standard",
+        progress_callback: Optional[ProgressCallback] = None,
     ) -> DownloadResult:
-        """同步下载音乐到本地"""
+        """同步下载音乐到本地
+
+        Args:
+            music_id: 歌曲 ID
+            quality: 音质等级
+            progress_callback: 可选进度回调 ``(已下载字节, 总字节)``
+
+        文件先写入同目录的隐藏 ``.part`` 临时文件，校验完整后再原子替换为
+        正式文件，避免中断 / 取消后留下损坏文件被误判为“已下载”。
+        """
+        tmp_path: Optional[str] = None
         try:
             music_info = self.get_music_info(music_id, quality)
             file_path = self._build_file_path(music_info)
@@ -284,15 +305,47 @@ class MusicDownloader:
                     file_path=str(file_path),
                     file_size=file_path.stat().st_size,
                     music_info=music_info,
+                    skipped=True,
                 )
 
-            # 流式下载
+            # 流式下载到临时文件
             response = requests.get(music_info.download_url, stream=True, timeout=30)
             response.raise_for_status()
-            with open(file_path, "wb") as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    if chunk:
-                        f.write(chunk)
+
+            header_size = int(response.headers.get("Content-Length") or 0)
+            total_size = header_size or music_info.file_size or 0
+
+            fd, tmp_path = tempfile.mkstemp(
+                prefix=".download-", suffix=".part", dir=str(self.download_dir)
+            )
+            os.close(fd)
+
+            downloaded = 0
+            last_report = 0.0
+            with open(tmp_path, "wb") as f:
+                for chunk in response.iter_content(chunk_size=64 * 1024):
+                    if not chunk:
+                        continue
+                    f.write(chunk)
+                    downloaded += len(chunk)
+                    if progress_callback:
+                        now = time.monotonic()
+                        if now - last_report >= 0.3:
+                            last_report = now
+                            progress_callback(downloaded, total_size)
+
+            # 简单完整性校验：服务端声明了长度就必须一致
+            if header_size and downloaded != header_size:
+                raise DownloadException(
+                    f"文件下载不完整: {downloaded}/{header_size} 字节"
+                )
+
+            if progress_callback:
+                progress_callback(downloaded, total_size or downloaded)
+
+            # 原子替换为正式文件
+            os.replace(tmp_path, file_path)
+            tmp_path = None
 
             # 写入元数据（失败不影响主流程）
             self._write_metadata_with_ffmpeg(file_path, music_info)
@@ -310,6 +363,13 @@ class MusicDownloader:
             return DownloadResult(success=False, error_message=f"下载请求失败: {e}")
         except Exception as e:
             return DownloadResult(success=False, error_message=f"下载过程中发生错误: {e}")
+        finally:
+            # 清理中断 / 失败留下的临时文件
+            if tmp_path and os.path.exists(tmp_path):
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
 
     # ----------- 下载（异步） -----------
 
@@ -317,8 +377,13 @@ class MusicDownloader:
         self,
         music_id: int,
         quality: str = "standard",
+        progress_callback: Optional[ProgressCallback] = None,
     ) -> DownloadResult:
-        """异步下载音乐到本地"""
+        """异步下载音乐到本地
+
+        同样使用 ``.part`` 临时文件 + 原子替换，避免出现半成品文件。
+        """
+        tmp_path: Optional[str] = None
         try:
             music_info = self.get_music_info(music_id, quality)
             file_path = self._build_file_path(music_info)
@@ -329,14 +394,41 @@ class MusicDownloader:
                     file_path=str(file_path),
                     file_size=file_path.stat().st_size,
                     music_info=music_info,
+                    skipped=True,
                 )
+
+            fd, tmp_path = tempfile.mkstemp(
+                prefix=".download-", suffix=".part", dir=str(self.download_dir)
+            )
+            os.close(fd)
 
             async with aiohttp.ClientSession() as session:
                 async with session.get(music_info.download_url) as resp:
                     resp.raise_for_status()
-                    async with aiofiles.open(file_path, "wb") as f:
-                        async for chunk in resp.content.iter_chunked(8192):
+                    header_size = int(resp.headers.get("Content-Length") or 0)
+                    total_size = header_size or music_info.file_size or 0
+                    downloaded = 0
+                    last_report = 0.0
+                    async with aiofiles.open(tmp_path, "wb") as f:
+                        async for chunk in resp.content.iter_chunked(64 * 1024):
                             await f.write(chunk)
+                            downloaded += len(chunk)
+                            if progress_callback:
+                                now = time.monotonic()
+                                if now - last_report >= 0.3:
+                                    last_report = now
+                                    progress_callback(downloaded, total_size)
+
+            if header_size and downloaded != header_size:
+                raise DownloadException(
+                    f"文件下载不完整: {downloaded}/{header_size} 字节"
+                )
+
+            if progress_callback:
+                progress_callback(downloaded, total_size or downloaded)
+
+            os.replace(tmp_path, file_path)
+            tmp_path = None
 
             self._write_metadata_with_ffmpeg(file_path, music_info)
 
@@ -353,6 +445,12 @@ class MusicDownloader:
             return DownloadResult(success=False, error_message=f"异步下载请求失败: {e}")
         except Exception as e:
             return DownloadResult(success=False, error_message=f"异步下载过程中发生错误: {e}")
+        finally:
+            if tmp_path and os.path.exists(tmp_path):
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
 
     # ----------- 下载到内存 -----------
 

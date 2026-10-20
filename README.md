@@ -9,7 +9,7 @@
 
 **功能强大的网易云音乐解析工具**
 
-支持歌曲搜索 | 单曲解析 | 歌单解析 | 专辑解析 | 音乐下载
+支持歌曲搜索 | 单曲解析 | 歌单解析 | 专辑解析 | 音乐下载 | 批量下载
 
 [在线体验](https://wyapi.toubiec.cn) • [使用文档](./使用文档.md) • [问题反馈](https://github.com/Suxiaoqinx/Netease_url/issues)
 
@@ -38,6 +38,7 @@
 - **📋 歌单解析**：批量解析歌单中的所有歌曲信息
 - **💿 专辑解析**：批量解析专辑中的所有歌曲信息
 - **⬇️ 音乐下载**：支持多种音质的音乐文件下载
+- **📦 批量下载**：歌单 / 专辑一键批量下载，后台并发、实时进度、失败自动降级音质，支持打包 ZIP
 
 ### 🎼 音质支持
 - `standard`：标准音质 (128kbps)
@@ -51,7 +52,7 @@
 ### 🌐 使用方式
 - **Web界面**：直观友好的网页操作界面
 - **RESTful API**：完整的API接口支持
-- **批量处理**：支持歌单和专辑的批量解析
+- **批量处理**：支持歌单和专辑的批量解析与批量下载
 - **多格式支持**：支持ID和链接多种输入格式
 
 ---
@@ -126,6 +127,8 @@ docker run -d -p 5000:5000 netease-music-api
    - 支持格式：`1234567890` 或 `https://music.163.com/playlist?id=1234567890`
 3. 点击**解析**按钮查看歌单中所有歌曲
 4. 点击单首歌曲的**解析**或**下载**按钮
+5. 勾选需要下载的歌曲（默认全选）并选择音质，点击**批量下载全部**或**下载选中**
+6. 在批量下载面板查看实时进度；完成后可**打包下载 ZIP**，也可逐首下载
 
 #### 💿 专辑解析
 1. 选择功能：**专辑解析**
@@ -133,6 +136,8 @@ docker run -d -p 5000:5000 netease-music-api
    - 支持格式：`1234567890` 或 `https://music.163.com/album?id=1234567890`
 3. 点击**解析**按钮查看专辑中所有歌曲
 4. 点击单首歌曲的**解析**或**下载**按钮
+5. 勾选需要下载的歌曲（默认全选）并选择音质，点击**批量下载全部**或**下载选中**
+6. 在批量下载面板查看实时进度；完成后可**打包下载 ZIP**，也可逐首下载
 
 #### ⬇️ 音乐下载
 1. 选择功能：**音乐下载**
@@ -250,9 +255,107 @@ Content-Type: application/json
 ```
 **响应**: 直接返回音频文件流
 
+#### 7. 批量下载
+
+批量下载采用「创建任务 + 轮询进度」的方式，下载在后台线程池中进行，不会阻塞请求。
+
+**创建任务**
+```http
+POST /batch/download
+Content-Type: application/json
+
+{
+  "type": "playlist",
+  "id": "123456789",
+  "quality": "lossless",
+  "fallback": true
+}
+```
+
+`type` 支持以下取值：
+
+| type | 说明 | 必填参数 |
+| --- | --- | --- |
+| `playlist` | 下载整个歌单 | `id`（歌单 ID 或链接） |
+| `album` | 下载整个专辑 | `id`（专辑 ID 或链接） |
+| `tracks` | 下载指定的歌曲数组 | `tracks` |
+| `ids` | 下载指定的歌曲 ID 列表 | `ids`（逗号分隔） |
+
+其他参数：
+- `quality`：音质，默认 `lossless`
+- `fallback`：高音质不可用时是否自动降级重试，默认 `true`
+- `name`：任务名称，默认使用歌单 / 专辑名
+
+`tracks` 示例：
+```json
+{
+  "type": "tracks",
+  "quality": "lossless",
+  "tracks": [
+    {"id": 185668, "name": "稻香", "artists": "周杰伦", "album": "魔杰座"}
+  ]
+}
+```
+
+**响应示例**（节选）：
+```json
+{
+  "status": 200,
+  "success": true,
+  "message": "批量下载任务已创建",
+  "data": {
+    "job_id": "4f1c...",
+    "name": "我喜欢的音乐",
+    "quality": "lossless",
+    "status": "running",
+    "total": 30,
+    "success": 0,
+    "skipped": 0,
+    "failed": 0,
+    "progress": 0,
+    "tracks": [
+      {
+        "index": 0,
+        "id": "185668",
+        "name": "稻香",
+        "status": "pending",
+        "progress": 0,
+        "file_url": null
+      }
+    ]
+  }
+}
+```
+
+**查询进度**
+```http
+GET /batch/status/<job_id>
+```
+
+**取消任务**
+```http
+POST /batch/cancel/<job_id>
+```
+
+**打包下载已完成文件**
+```http
+GET /batch/zip/<job_id>
+```
+返回 ZIP 文件流，只包含已下载完成（含此前已存在）的歌曲。ZIP 采用边读边发的方式生成，不会在磁盘上再生成一份和歌单等大的临时文件。
+
+> ZIP 为流式响应，不支持断点续传 / 多线程分段下载，请使用浏览器自带的下载功能。若下载中断，文件会不完整，需要重新下载。
+
+**下载任务中的单曲**
+```http
+GET /batch/file/<job_id>/<index>
+```
+`index` 为任务歌曲序号（从 0 开始）。
+
+> 说明：单个任务最多 1000 首歌曲，默认 3 个并发下载。高音质失败时会按 `jymaster → hires → lossless → exhigh → standard` 的顺序自动降级（可通过 `fallback: false` 关闭）。任务状态保存在内存中，服务重启后任务列表清空，但已下载的音频文件仍保留在 `downloads` 目录。
+
 ---
 
-## 音质参数说明（仅限单曲解析）
+## 音质参数说明
 
 - `standard`：标准音质
 - `exhigh`：极高音质
@@ -261,9 +364,10 @@ Content-Type: application/json
 - `jyeffect`：高清环绕声
 - `sky`：沉浸环绕声
 - `jymaster`：超清母带
+- `dolby`：杜比全景声
 
 > 黑胶VIP音质：standard, exhigh, lossless, hires, jyeffect  
-> 黑胶SVIP音质：sky, jymaster
+> 黑胶SVIP音质：sky, jymaster, dolby
 
 ---
 
