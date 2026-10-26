@@ -1,4 +1,4 @@
-FROM python:3.9.22-alpine3.21
+FROM python:3.12-alpine3.23
 WORKDIR /app
 RUN apk add --no-cache ffmpeg
 COPY requirements.txt requirements.txt
