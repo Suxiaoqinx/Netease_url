@@ -9,6 +9,8 @@
 """
 
 import logging
+import json
+import re
 import sys
 import time
 import traceback
@@ -26,6 +28,10 @@ try:
         load_cookies,
     )
     from music_downloader import MusicDownloader, DownloadException, AudioFormat
+    from batch_downloader import (
+        BatchDownloadManager, BatchDownloadError, MAX_BATCH_TRACKS,
+        TRACK_SUCCESS, TRACK_SKIPPED,
+    )
 except ImportError as e:
     print(f"导入模块失败: {e}")
     print("请确保所有依赖模块存在且可用")
@@ -43,6 +49,8 @@ class APIConfig:
     request_timeout: int = 30
     log_level: str = 'INFO'
     cors_origins: str = '*'
+    batch_workers: int = 3  # 批量下载并发数
+    max_batch_tracks: int = MAX_BATCH_TRACKS
 
 
 class APIResponse:
@@ -80,11 +88,18 @@ class MusicAPIService:
         self.config = config
         self.logger = self._setup_logger()
         self.netease_api = NeteaseAPI()
-        self.downloader = MusicDownloader()
+        self.downloader = MusicDownloader(download_dir=config.downloads_dir)
 
         # 创建下载目录
         self.downloads_path = Path(config.downloads_dir)
         self.downloads_path.mkdir(exist_ok=True)
+
+        # 批量下载任务管理器（后台线程池）
+        self.batch_manager = BatchDownloadManager(
+            downloader=self.downloader,
+            download_dir=config.downloads_dir,
+            max_workers=config.batch_workers,
+        )
 
         self.logger.info(f"音乐API服务初始化完成，下载目录: {self.downloads_path.absolute()}")
     
@@ -147,6 +162,38 @@ class MusicAPIService:
         except Exception as e:
             self.logger.error(f"提取音乐ID失败: {e}")
             return str(id_or_url).strip()
+
+    def _extract_numeric_id(self, id_or_url: str) -> str:
+        """从歌单 / 专辑 / 歌曲的 ID 或链接中提取纯数字 ID
+
+        支持形如 ``https://music.163.com/playlist?id=123``、
+        ``https://music.163.com/#/album?id=123``、``123`` 以及 ``163cn.tv`` 短链。
+        """
+        if id_or_url is None:
+            return ""
+        value = str(id_or_url).strip()
+        if not value:
+            return ""
+
+        try:
+            # 处理网易云短链接
+            if "163cn.tv" in value:
+                import requests
+                response = requests.get(value, allow_redirects=False, timeout=10)
+                value = response.headers.get("Location", value) or value
+        except Exception as e:
+            self.logger.warning(f"解析短链接失败: {e}")
+
+        match = re.search(r"[?&]id=(\d+)", value)
+        if match:
+            return match.group(1)
+
+        match = re.search(r"/(?:playlist|album|song|discover)/(\d+)", value)
+        if match:
+            return match.group(1)
+
+        match = re.search(r"(\d{3,})", value)
+        return match.group(1) if match else ""
     
     def _format_file_size(self, size_bytes: int) -> str:
         """格式化文件大小"""
@@ -605,6 +652,253 @@ def download_music_api():
         return APIResponse.error(f"下载异常: {str(e)}", 500)
 
 
+# ============ 批量下载 API ============
+
+VALID_AUDIO_QUALITIES = [
+    'standard', 'exhigh', 'lossless', 'hires',
+    'sky', 'jyeffect', 'jymaster', 'dolby',
+]
+
+
+def _parse_bool(value: Any, default: bool = True) -> bool:
+    """解析表单 / JSON 中的布尔值"""
+    if value is None:
+        return default
+    return str(value).strip().lower() not in ('', '0', 'false', 'no', 'off')
+
+
+@app.route('/batch/download', methods=['GET', 'POST'])
+def batch_download_api():
+    """创建批量下载任务
+
+    请求参数（JSON 或表单）：
+    - ``type``: ``playlist`` / ``album`` / ``tracks`` / ``ids``
+    - ``id``: 歌单 / 专辑 ID 或链接（type=playlist/album 时必填）
+    - ``tracks``: 歌曲信息数组（type=tracks 时使用）
+    - ``ids``: 逗号分隔的歌曲 ID（type=ids 时使用）
+    - ``quality``: 音质，默认 lossless
+    - ``fallback``: 高音质不可用时是否降级，默认 true
+    - ``name``: 任务名称（可选，默认使用歌单 / 专辑名）
+
+    接口立即返回任务快照，实际下载在后台线程池中进行，
+    可通过 ``GET /batch/status/<job_id>`` 轮询进度。
+    """
+    try:
+        data = api_service._safe_get_request_data()
+
+        quality = str(data.get('quality') or 'lossless').strip().lower()
+        if quality not in VALID_AUDIO_QUALITIES:
+            return APIResponse.error(
+                f"无效的音质参数，支持: {', '.join(VALID_AUDIO_QUALITIES)}"
+            )
+
+        fallback = _parse_bool(data.get('fallback'), default=True)
+        job_name = str(data.get('name') or '').strip()
+
+        source_type = str(data.get('type') or '').strip().lower()
+        if source_type in ('songs',):
+            source_type = 'tracks'
+        if source_type not in ('playlist', 'album', 'tracks', 'ids'):
+            # 未显式指定类型时，根据链接 / 参数智能推断
+            probe = str(data.get('id') or data.get('url') or '')
+            if 'playlist' in probe:
+                source_type = 'playlist'
+            elif 'album' in probe:
+                source_type = 'album'
+            elif data.get('tracks'):
+                source_type = 'tracks'
+            else:
+                source_type = 'ids'
+
+        tracks: Any = []
+
+        if source_type in ('playlist', 'album'):
+            raw_source = data.get('id') or data.get('url')
+            source_id = api_service._extract_numeric_id(raw_source)
+            if not source_id:
+                return APIResponse.error("必须提供有效的歌单 / 专辑 ID 或链接")
+
+            cookies = api_service._get_cookies()
+            if source_type == 'playlist':
+                detail = playlist_detail(source_id, cookies)
+                tracks = detail.get('tracks') or []
+                job_name = job_name or str(detail.get('name') or '')
+            else:
+                detail = album_detail(source_id, cookies)
+                tracks = detail.get('songs') or []
+                job_name = job_name or str(detail.get('name') or '')
+
+            if not tracks:
+                return APIResponse.error("未获取到歌曲列表，歌单 / 专辑可能为空或无权访问", 404)
+
+        else:
+            raw_tracks = data.get('tracks')
+            if isinstance(raw_tracks, str):
+                try:
+                    raw_tracks = json.loads(raw_tracks)
+                except json.JSONDecodeError:
+                    return APIResponse.error("'tracks' 必须是合法的 JSON 数组")
+
+            if raw_tracks is not None and not isinstance(raw_tracks, list):
+                return APIResponse.error("'tracks' 必须是数组")
+
+            if raw_tracks:
+                tracks = raw_tracks
+                if not job_name:
+                    job_name = "选中歌曲"
+            else:
+                raw_ids = data.get('ids') or data.get('id')
+                if isinstance(raw_ids, (list, tuple)):
+                    values = list(raw_ids)
+                else:
+                    values = [
+                        item for item in re.split(r'[,，;；\s]+', str(raw_ids or ''))
+                        if item
+                    ]
+
+                tracks = []
+                for value in values:
+                    if isinstance(value, dict):
+                        tracks.append(value)
+                    else:
+                        song_id = api_service._extract_numeric_id(value)
+                        if song_id:
+                            tracks.append({'id': song_id})
+
+                if not job_name:
+                    job_name = "批量下载"
+
+        if not tracks:
+            return APIResponse.error("没有可下载的歌曲")
+
+        if len(tracks) > api_service.config.max_batch_tracks:
+            return APIResponse.error(
+                f"单次最多下载 {api_service.config.max_batch_tracks} 首歌曲，"
+                f"当前 {len(tracks)} 首"
+            )
+
+        try:
+            job = api_service.batch_manager.create_job(
+                tracks,
+                quality=quality,
+                name=job_name,
+                fallback=fallback,
+            )
+        except BatchDownloadError as e:
+            return APIResponse.error(str(e), 400)
+
+        api_service.logger.info(
+            f"创建批量下载任务 {job.job_id}: {job.name} "
+            f"({len(job.tasks)} 首, 音质={quality}, fallback={fallback})"
+        )
+        return APIResponse.success(job.snapshot(), "批量下载任务已创建")
+
+    except Exception as e:
+        api_service.logger.error(f"创建批量下载任务异常: {e}\n{traceback.format_exc()}")
+        return APIResponse.error(f"创建批量下载任务失败: {str(e)}", 500)
+
+
+@app.route('/batch/status/<job_id>', methods=['GET'])
+def batch_download_status(job_id: str):
+    """查询批量下载任务进度"""
+    job = api_service.batch_manager.get_job(job_id)
+    if job is None:
+        return APIResponse.error("任务不存在或已过期", 404)
+    return APIResponse.success(job.snapshot(), "获取任务状态成功")
+
+
+@app.route('/batch/cancel/<job_id>', methods=['GET', 'POST'])
+def batch_download_cancel(job_id: str):
+    """取消批量下载任务"""
+    job = api_service.batch_manager.get_job(job_id)
+    if job is None:
+        return APIResponse.error("任务不存在或已过期", 404)
+
+    if job.cancel():
+        api_service.logger.info(f"取消批量下载任务 {job_id}")
+        message = "已发送取消请求"
+    else:
+        message = "任务已结束，无需取消"
+
+    return APIResponse.success(job.snapshot(), message)
+
+
+@app.route('/batch/jobs', methods=['GET'])
+def batch_download_jobs():
+    """列出最近的批量下载任务"""
+    try:
+        limit = int(request.args.get('limit', 20))
+    except (TypeError, ValueError):
+        limit = 20
+    limit = max(1, min(limit, 100))
+    return APIResponse.success(
+        api_service.batch_manager.list_jobs(limit), "获取任务列表成功"
+    )
+
+
+@app.route('/batch/file/<job_id>/<int:track_index>', methods=['GET'])
+def batch_download_file(job_id: str, track_index: int):
+    """下载批量任务中单首已完成的歌曲"""
+    task = api_service.batch_manager.get_completed_task(job_id, track_index)
+    if task is None:
+        return APIResponse.error("文件不存在或尚未下载完成", 404)
+
+    filename = task.filename or Path(task.file_path).name
+    try:
+        return send_file(
+            task.file_path,
+            as_attachment=True,
+            download_name=filename,
+            mimetype='application/octet-stream',
+        )
+    except Exception as e:
+        api_service.logger.error(f"发送批量下载文件失败: {e}")
+        return APIResponse.error(f"文件发送失败: {str(e)}", 500)
+
+
+@app.route('/batch/zip/<job_id>', methods=['GET'])
+def batch_download_zip(job_id: str):
+    """把批量任务中已完成（含已存在）的文件打包为 ZIP 下载
+
+    ZIP 采用流式生成：一边读取音频文件一边发送给浏览器，
+    不再为整个歌单生成临时 ZIP 文件，避免占用双倍磁盘空间。
+    """
+    job = api_service.batch_manager.get_job(job_id)
+    if job is None:
+        return APIResponse.error("任务不存在或已过期", 404)
+
+    try:
+        entries = api_service.batch_manager.prepare_zip(job_id)
+    except Exception as e:
+        api_service.logger.error(f"准备批量下载文件异常: {e}\n{traceback.format_exc()}")
+        return APIResponse.error(f"打包失败: {str(e)}", 500)
+
+    if not entries:
+        return APIResponse.error("没有可打包的已完成文件", 404)
+
+    filename = api_service.batch_manager.zip_download_name(job)
+    ascii_name = f"netease-music-{job_id[:8]}.zip"
+    headers = {
+        'Content-Disposition': (
+            f'attachment; filename="{ascii_name}"; '
+            f"filename*=UTF-8''{quote(filename)}"
+        ),
+        'Accept-Ranges': 'none',
+        'Cache-Control': 'no-store',
+        'X-Accel-Buffering': 'no',
+    }
+
+    api_service.logger.info(
+        f"开始流式打包任务 {job_id}: {len(entries)} 首 -> {filename}"
+    )
+    return Response(
+        api_service.batch_manager.stream_zip(entries),
+        content_type='application/zip',
+        headers=headers,
+        direct_passthrough=True,
+    )
+
+
 @app.route('/api/info', methods=['GET'])
 def api_info():
     """API信息接口"""
@@ -620,16 +914,21 @@ def api_info():
                 '/playlist': 'GET/POST - 获取歌单详情',
                 '/album': 'GET/POST - 获取专辑详情',
                 '/download': 'GET/POST - 下载音乐',
+                '/batch/download': 'POST - 创建批量下载任务',
+                '/batch/status/<job_id>': 'GET - 查询批量下载进度',
+                '/batch/cancel/<job_id>': 'POST - 取消批量下载任务',
+                '/batch/jobs': 'GET - 最近的批量下载任务',
+                '/batch/file/<job_id>/<index>': 'GET - 下载任务中的单曲',
+                '/batch/zip/<job_id>': 'GET - 打包下载已完成歌曲',
                 '/api/info': 'GET - API信息'
             },
-            'supported_qualities': [
-                'standard', 'exhigh', 'lossless', 
-                'hires', 'sky', 'jyeffect', 'jymaster'
-            ],
+            'supported_qualities': VALID_AUDIO_QUALITIES,
             'config': {
                 'downloads_dir': str(api_service.downloads_path.absolute()),
                 'max_file_size': f"{config.max_file_size // (1024*1024)}MB",
-                'request_timeout': f"{config.request_timeout}s"
+                'request_timeout': f"{config.request_timeout}s",
+                'max_batch_tracks': config.max_batch_tracks,
+                'batch_workers': config.batch_workers
             }
         }
         
@@ -656,9 +955,12 @@ def start_api_server():
         print(f"  ├─ POST /playlist      - 获取歌单详情")
         print(f"  ├─ POST /album         - 获取专辑详情")
         print(f"  ├─ POST /download      - 下载音乐")
+        print(f"  ├─ POST /batch/download - 创建批量下载任务")
+        print(f"  ├─ GET  /batch/status  - 查询批量下载进度")
+        print(f"  ├─ GET  /batch/zip     - 打包下载已完成歌曲")
         print(f"  └─ GET  /api/info      - API信息")
         print("\n🎵 支持的音质:")
-        print(f"  standard, exhigh, lossless, hires, sky, jyeffect, jymaster")
+        print(f"  standard, exhigh, lossless, hires, sky, jyeffect, jymaster, dolby")
         print("="*60)
         print(f"⏰ 启动时间: {time.strftime('%Y-%m-%d %H:%M:%S')}")
         print("🌟 服务已就绪，等待请求...\n")
