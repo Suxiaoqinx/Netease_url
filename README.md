@@ -47,6 +47,7 @@
 - `jyeffect`：高清环绕声
 - `sky`：沉浸环绕声
 - `jymaster`：超清母带
+- `vivid`：臻音全景声
 
 ### 🌐 使用方式
 - **Web界面**：直观友好的网页操作界面
@@ -261,9 +262,10 @@ Content-Type: application/json
 - `jyeffect`：高清环绕声
 - `sky`：沉浸环绕声
 - `jymaster`：超清母带
+- `vivid`：臻音全景声
 
 > 黑胶VIP音质：standard, exhigh, lossless, hires, jyeffect  
-> 黑胶SVIP音质：sky, jymaster
+> 黑胶SVIP音质：sky, jymaster, vivid
 
 ---
 

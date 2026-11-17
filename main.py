@@ -173,6 +173,7 @@ class MusicAPIService:
             'sky': "沉浸环绕声",
             'jyeffect': "高清环绕声",
             'jymaster': "超清母带",
+            'vivid': "臻音全景声",
             'dolby': "杜比全景声"
         }
         return quality_names.get(quality, f"未知音质({quality})")
@@ -298,7 +299,7 @@ def get_song_info():
         music_id = api_service._extract_music_id(song_ids or url)
         
         # 验证音质参数
-        valid_levels = ['standard', 'exhigh', 'lossless', 'hires', 'sky', 'jyeffect', 'jymaster', 'dolby']
+        valid_levels = ['standard', 'exhigh', 'lossless', 'hires', 'sky', 'jyeffect', 'jymaster', 'vivid', 'dolby']
         if level not in valid_levels:
             return APIResponse.error(f"无效的音质参数，支持: {', '.join(valid_levels)}")
         
@@ -500,7 +501,7 @@ def download_music_api():
             return validation_error
         
         # 验证音质参数
-        valid_qualities = ['standard', 'exhigh', 'lossless', 'hires', 'sky', 'jyeffect', 'jymaster', 'dolby']
+        valid_qualities = ['standard', 'exhigh', 'lossless', 'hires', 'sky', 'jyeffect', 'jymaster', 'vivid', 'dolby']
         if quality not in valid_qualities:
             return APIResponse.error(f"无效的音质参数，支持: {', '.join(valid_qualities)}")
         
@@ -624,7 +625,7 @@ def api_info():
             },
             'supported_qualities': [
                 'standard', 'exhigh', 'lossless', 
-                'hires', 'sky', 'jyeffect', 'jymaster'
+                'hires', 'sky', 'jyeffect', 'jymaster', 'vivid', 'dolby'
             ],
             'config': {
                 'downloads_dir': str(api_service.downloads_path.absolute()),
@@ -658,7 +659,7 @@ def start_api_server():
         print(f"  ├─ POST /download      - 下载音乐")
         print(f"  └─ GET  /api/info      - API信息")
         print("\n🎵 支持的音质:")
-        print(f"  standard, exhigh, lossless, hires, sky, jyeffect, jymaster")
+        print(f"  standard, exhigh, lossless, hires, sky, jyeffect, jymaster, vivid, dolby")
         print("="*60)
         print(f"⏰ 启动时间: {time.strftime('%Y-%m-%d %H:%M:%S')}")
         print("🌟 服务已就绪，等待请求...\n")

@@ -54,6 +54,7 @@ class QualityLevel(Enum):
     SKY = "sky"
     JYEFFECT = "jyeffect"
     JYMASTER = "jymaster"
+    VIVID = "vivid"
     DOLBY = "dolby"
 
 
@@ -651,7 +652,7 @@ if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("网易云音乐下载器")
         print(f"ffmpeg 路径: {downloader.ffmpeg_path or '未找到'}")
-        print("支持的音质: standard / exhigh / lossless / hires / sky / jyeffect / jymaster / dolby")
+        print("支持的音质: standard / exhigh / lossless / hires / sky / jyeffect / jymaster / vivid / dolby")
         print("支持的功能: 同步/异步/批量下载、内存下载、进度查询、ffmpeg 元数据写入")
         print()
         print("用法:")

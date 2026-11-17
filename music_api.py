@@ -32,6 +32,7 @@ class QualityLevel(Enum):
     SKY = "sky"                # 沉浸环绕声
     JYEFFECT = "jyeffect"      # 高清环绕声
     JYMASTER = "jymaster"      # 超清母带
+    VIVID = "vivid"      # 臻音全景声
     DOLBY = "dolby"      # 杜比全景声
 
 
@@ -162,7 +163,7 @@ class NeteaseAPI:
         
         Args:
             song_id: 歌曲ID
-            quality: 音质等级 (standard, exhigh, lossless, hires, sky, jyeffect, jymaster)
+            quality: 音质等级 (standard, exhigh, lossless, hires, sky, jyeffect, jymaster, vivid, dolby)
             cookies: 用户cookies
             
         Returns:
